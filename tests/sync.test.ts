@@ -4,6 +4,7 @@ import type { App } from "obsidian";
 import { requestUrl } from "obsidian";
 import { DEFAULT_SETTINGS } from "../src/types";
 import type { RepoData } from "../src/types";
+import type { Logger } from "../src/logger";
 
 vi.mock("../src/github", () => ({
 	fetchRepos: vi.fn(),
@@ -42,6 +43,15 @@ function makeApp(overrides: Record<string, unknown> = {}): App {
 		workspace: { onLayoutReady: vi.fn() },
 		...overrides,
 	} as unknown as App;
+}
+
+function makeLogger(): Logger {
+	return {
+		debug: vi.fn(),
+		info: vi.fn(),
+		warn: vi.fn(),
+		error: vi.fn(),
+	};
 }
 
 function makeRepo(overrides: Partial<RepoData> = {}): RepoData {
@@ -119,7 +129,7 @@ describe("SyncManager.run()", () => {
 
 	it("returns early with Notice when no token", async () => {
 		const app = makeApp();
-		const manager = new SyncManager(app, () => DEFAULT_SETTINGS, () => null);
+		const manager = new SyncManager(app, () => DEFAULT_SETTINGS, () => null, makeLogger());
 		const result = await manager.run();
 		expect(result).toEqual({ synced: 0, skipped: 0, errors: 0 });
 		expect(vi.mocked(fetchRepos)).not.toHaveBeenCalled();
@@ -128,7 +138,7 @@ describe("SyncManager.run()", () => {
 	it("returns early with Notice when no username", async () => {
 		const app = makeApp();
 		const settings = { ...DEFAULT_SETTINGS, githubUsername: "" };
-		const manager = new SyncManager(app, () => settings, () => "mytoken");
+		const manager = new SyncManager(app, () => settings, () => "mytoken", makeLogger());
 		const result = await manager.run();
 		expect(result).toEqual({ synced: 0, skipped: 0, errors: 0 });
 		expect(vi.mocked(fetchRepos)).not.toHaveBeenCalled();
@@ -138,7 +148,7 @@ describe("SyncManager.run()", () => {
 		const app = makeApp();
 		vi.mocked(fetchRepos).mockResolvedValue([]);
 		const settings = { ...DEFAULT_SETTINGS, githubUsername: "user" };
-		const manager = new SyncManager(app, () => settings, () => "mytoken");
+		const manager = new SyncManager(app, () => settings, () => "mytoken", makeLogger());
 		// Start first run but do not await
 		const first = manager.run();
 		// Second run should return immediately due to guard
@@ -152,7 +162,7 @@ describe("SyncManager.run()", () => {
 		const repo = makeRepo();
 		vi.mocked(fetchRepos).mockResolvedValue([repo]);
 		const settings = { ...DEFAULT_SETTINGS, githubUsername: "user" };
-		const manager = new SyncManager(app, () => settings, () => "mytoken");
+		const manager = new SyncManager(app, () => settings, () => "mytoken", makeLogger());
 		const result = await manager.run();
 		expect(vi.mocked(fetchRepos)).toHaveBeenCalledOnce();
 		expect((app.vault.create as ReturnType<typeof vi.fn>)).toHaveBeenCalled();
@@ -164,7 +174,7 @@ describe("SyncManager.run()", () => {
 		const app = makeApp();
 		vi.mocked(fetchRepos).mockRejectedValue(new GitHubAuthError());
 		const settings = { ...DEFAULT_SETTINGS, githubUsername: "user" };
-		const manager = new SyncManager(app, () => settings, () => "mytoken");
+		const manager = new SyncManager(app, () => settings, () => "mytoken", makeLogger());
 		const result = await manager.run();
 		expect(result).toEqual({ synced: 0, skipped: 0, errors: 0 });
 	});
@@ -173,7 +183,7 @@ describe("SyncManager.run()", () => {
 		const app = makeApp();
 		vi.mocked(fetchRepos).mockRejectedValue(new GitHubRateLimitError(1700000000));
 		const settings = { ...DEFAULT_SETTINGS, githubUsername: "user" };
-		const manager = new SyncManager(app, () => settings, () => "mytoken");
+		const manager = new SyncManager(app, () => settings, () => "mytoken", makeLogger());
 		const result = await manager.run();
 		expect(result).toEqual({ synced: 0, skipped: 0, errors: 0 });
 	});
@@ -182,7 +192,7 @@ describe("SyncManager.run()", () => {
 		const app = makeApp();
 		vi.mocked(fetchRepos).mockRejectedValue(new Error("network failure"));
 		const settings = { ...DEFAULT_SETTINGS, githubUsername: "user" };
-		const manager = new SyncManager(app, () => settings, () => "mytoken");
+		const manager = new SyncManager(app, () => settings, () => "mytoken", makeLogger());
 		const result = await manager.run();
 		expect(result).toEqual({ synced: 0, skipped: 0, errors: 0 });
 	});
@@ -199,7 +209,7 @@ describe("SyncManager.detectOrphans()", () => {
 		(app.vault.getMarkdownFiles as ReturnType<typeof vi.fn>).mockReturnValue([orphanFile]);
 		vi.mocked(fetchRepos).mockResolvedValue([makeRepo({ name: "my-repo" })]);
 		const settings = { ...DEFAULT_SETTINGS, githubUsername: "user", outputFolder: "GitHub" };
-		const manager = new SyncManager(app, () => settings, () => "mytoken");
+		const manager = new SyncManager(app, () => settings, () => "mytoken", makeLogger());
 		// run() triggers detectOrphans internally
 		await manager.run();
 		// If we got here without throwing, the notice path was exercised
@@ -217,7 +227,7 @@ describe("SyncManager.ensureFolder()", () => {
 		(app.vault.getFolderByPath as ReturnType<typeof vi.fn>).mockReturnValue(null);
 		vi.mocked(fetchRepos).mockResolvedValue([]);
 		const settings = { ...DEFAULT_SETTINGS, githubUsername: "user", outputFolder: "GitHub" };
-		const manager = new SyncManager(app, () => settings, () => "mytoken");
+		const manager = new SyncManager(app, () => settings, () => "mytoken", makeLogger());
 		await manager.run();
 		expect((app.vault.createFolder as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith("GitHub");
 	});
@@ -227,7 +237,7 @@ describe("SyncManager.ensureFolder()", () => {
 		(app.vault.getFolderByPath as ReturnType<typeof vi.fn>).mockReturnValue({ path: "GitHub" });
 		vi.mocked(fetchRepos).mockResolvedValue([]);
 		const settings = { ...DEFAULT_SETTINGS, githubUsername: "user", outputFolder: "GitHub" };
-		const manager = new SyncManager(app, () => settings, () => "mytoken");
+		const manager = new SyncManager(app, () => settings, () => "mytoken", makeLogger());
 		await manager.run();
 		expect((app.vault.createFolder as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
 	});
@@ -253,7 +263,7 @@ describe("SyncManager vault.modify for existing files", () => {
 		const repo = makeRepo({ updatedAt: "2026-04-08T09:00:00Z" });
 		vi.mocked(fetchRepos).mockResolvedValue([repo]);
 		const settings = { ...DEFAULT_SETTINGS, githubUsername: "user", outputFolder: "GitHub" };
-		const manager = new SyncManager(app, () => settings, () => "mytoken");
+		const manager = new SyncManager(app, () => settings, () => "mytoken", makeLogger());
 		const result = await manager.run();
 		expect((app.vault.modify as ReturnType<typeof vi.fn>)).toHaveBeenCalled();
 		expect((app.vault.create as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
@@ -289,7 +299,7 @@ describe("SyncManager.downloadCoverImage()", () => {
 			outputFolder: "GitHub",
 			assetsFolder: "GitHub/assets",
 		};
-		const manager = new SyncManager(app, () => settings, () => "mytoken");
+		const manager = new SyncManager(app, () => settings, () => "mytoken", makeLogger());
 		await manager.run();
 		expect((app.vault.createBinary as ReturnType<typeof vi.fn>)).toHaveBeenCalled();
 	});
@@ -325,15 +335,14 @@ describe("SyncManager.downloadCoverImage()", () => {
 			outputFolder: "GitHub",
 			assetsFolder: "GitHub/assets",
 		};
-		const manager = new SyncManager(app, () => settings, () => "mytoken");
+		const manager = new SyncManager(app, () => settings, () => "mytoken", makeLogger());
 		await manager.run();
 		expect((app.vault.modifyBinary as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith(coverFile, fakeBuffer);
 	});
 
-	it("does not abort sync when image download throws (console.warn called)", async () => {
+	it("does not abort sync when image download throws (logger.warn called)", async () => {
 		const app = makeApp();
 		(app.vault.getFileByPath as ReturnType<typeof vi.fn>).mockReturnValue(null);
-		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 		// First call (from fetchRepos mock setup) is fine; requestUrl for image throws
 		vi.mocked(requestUrl).mockRejectedValue(new Error("network error"));
 		const repo = makeRepo({
@@ -347,13 +356,13 @@ describe("SyncManager.downloadCoverImage()", () => {
 			outputFolder: "GitHub",
 			assetsFolder: "GitHub/assets",
 		};
-		const manager = new SyncManager(app, () => settings, () => "mytoken");
+		const logger = makeLogger();
+		const manager = new SyncManager(app, () => settings, () => "mytoken", logger);
 		const result = await manager.run();
-		expect(warnSpy).toHaveBeenCalled();
+		expect(logger.warn).toHaveBeenCalled();
 		// Sync still creates the markdown file
 		expect((app.vault.create as ReturnType<typeof vi.fn>)).toHaveBeenCalled();
 		expect(result.synced).toBe(1);
-		warnSpy.mockRestore();
 	});
 
 	it("skips download when existing file mtime is newer than repo update", async () => {
@@ -380,7 +389,7 @@ describe("SyncManager.downloadCoverImage()", () => {
 			outputFolder: "GitHub",
 			assetsFolder: "GitHub/assets",
 		};
-		const manager = new SyncManager(app, () => settings, () => "mytoken");
+		const manager = new SyncManager(app, () => settings, () => "mytoken", makeLogger());
 		await manager.run();
 		// requestUrl should NOT have been called for the image since mtime is newer
 		const calls = vi.mocked(requestUrl).mock.calls;

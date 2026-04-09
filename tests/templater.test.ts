@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { substituteTemplateVars, getTemplaterPlugin, renderWithTemplater, renderBodyWithTemplate } from "../src/templater";
 import type { RepoData } from "../src/types";
 import type { App } from "obsidian";
+import type { Logger } from "../src/logger";
 
 function makeRepo(overrides: Partial<RepoData> = {}): RepoData {
 	return {
@@ -152,6 +153,15 @@ describe("substituteTemplateVars", () => {
 // getTemplaterPlugin
 // ---------------------------------------------------------------------------
 
+function makeLogger(): Logger {
+	return {
+		debug: vi.fn(),
+		info: vi.fn(),
+		warn: vi.fn(),
+		error: vi.fn(),
+	};
+}
+
 function makeApp(pluginReturnValue: unknown = null): App {
 	return {
 		vault: {
@@ -188,7 +198,7 @@ describe("renderWithTemplater", () => {
 
 	it("returns null when Templater plugin is not found", async () => {
 		const app = makeApp(null);
-		const result = await renderWithTemplater(app, "templates/repo.md", makeRepo());
+		const result = await renderWithTemplater(app, "templates/repo.md", makeRepo(), makeLogger());
 		expect(result).toBeNull();
 	});
 
@@ -196,7 +206,7 @@ describe("renderWithTemplater", () => {
 		const fakePlugin = { id: "templater-obsidian" };
 		const app = makeApp(fakePlugin);
 		(app.vault.getFileByPath as ReturnType<typeof vi.fn>).mockReturnValue(null);
-		const result = await renderWithTemplater(app, "templates/missing.md", makeRepo());
+		const result = await renderWithTemplater(app, "templates/missing.md", makeRepo(), makeLogger());
 		expect(result).toBeNull();
 	});
 
@@ -206,7 +216,7 @@ describe("renderWithTemplater", () => {
 		const fakeFile = { path: "templates/repo.md", basename: "repo" };
 		(app.vault.getFileByPath as ReturnType<typeof vi.fn>).mockReturnValue(fakeFile);
 		(app.vault.read as ReturnType<typeof vi.fn>).mockResolvedValue("# {{repo.name}}");
-		const result = await renderWithTemplater(app, "templates/repo.md", makeRepo());
+		const result = await renderWithTemplater(app, "templates/repo.md", makeRepo(), makeLogger());
 		expect(result).toBe("# my-project");
 	});
 
@@ -216,7 +226,7 @@ describe("renderWithTemplater", () => {
 		const fakeFile = { path: "templates/repo.md", basename: "repo" };
 		(app.vault.getFileByPath as ReturnType<typeof vi.fn>).mockReturnValue(fakeFile);
 		(app.vault.read as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("disk error"));
-		const result = await renderWithTemplater(app, "templates/repo.md", makeRepo());
+		const result = await renderWithTemplater(app, "templates/repo.md", makeRepo(), makeLogger());
 		expect(result).toBeNull();
 	});
 });
@@ -233,7 +243,7 @@ describe("renderBodyWithTemplate", () => {
 	it("falls back to renderBody when renderWithTemplater returns null", async () => {
 		// No plugin → renderWithTemplater returns null
 		const app = makeApp(null);
-		const result = await renderBodyWithTemplate(app, "templates/repo.md", makeRepo());
+		const result = await renderBodyWithTemplate(app, "templates/repo.md", makeRepo(), makeLogger());
 		// renderBody produces non-empty markdown
 		expect(typeof result).toBe("string");
 		expect(result.length).toBeGreaterThan(0);
@@ -245,7 +255,7 @@ describe("renderBodyWithTemplate", () => {
 		const fakeFile = { path: "templates/repo.md", basename: "repo" };
 		(app.vault.getFileByPath as ReturnType<typeof vi.fn>).mockReturnValue(fakeFile);
 		(app.vault.read as ReturnType<typeof vi.fn>).mockResolvedValue("custom: {{repo.name}}");
-		const result = await renderBodyWithTemplate(app, "templates/repo.md", makeRepo());
+		const result = await renderBodyWithTemplate(app, "templates/repo.md", makeRepo(), makeLogger());
 		expect(result).toBe("custom: my-project");
 	});
 });
