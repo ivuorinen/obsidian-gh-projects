@@ -4,6 +4,7 @@ import { GHProjectsSettingTab } from "./settings";
 import { SyncManager } from "./sync";
 import { DEFAULT_SETTINGS } from "./types";
 import type { GHProjectsSettings } from "./types";
+import { settingsSchema } from "./schemas";
 
 class RepoSuggestModal extends SuggestModal<TFile> {
 	private files: TFile[];
@@ -26,7 +27,7 @@ class RepoSuggestModal extends SuggestModal<TFile> {
 	}
 
 	onChooseSuggestion(file: TFile): void {
-		this.app.workspace.openLinkText(file.path, "", false);
+		void this.app.workspace.openLinkText(file.path, "", false);
 	}
 }
 
@@ -66,7 +67,7 @@ export default class GHProjectsPlugin extends Plugin {
 		this.updateStatusBar();
 
 		this.app.workspace.onLayoutReady(() => {
-			this.runSync();
+			void this.runSync();
 			this.startSyncInterval();
 		});
 
@@ -81,7 +82,9 @@ export default class GHProjectsPlugin extends Plugin {
 	}
 
 	async loadSettings(): Promise<void> {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		const raw: unknown = await this.loadData();
+		const parsed = settingsSchema.parse(raw ?? {});
+		this.settings = { ...DEFAULT_SETTINGS, ...parsed };
 	}
 
 	async saveSettings(): Promise<void> {
@@ -135,6 +138,7 @@ export default class GHProjectsPlugin extends Plugin {
 			const ago = this.timeSince(this.lastSyncTime);
 			this.statusBarEl.setText(`GH: synced ${ago} ago`);
 		} else {
+			// eslint-disable-next-line obsidianmd/ui/sentence-case -- "GH" is an abbreviation
 			this.statusBarEl.setText("GH: not synced");
 		}
 	}
