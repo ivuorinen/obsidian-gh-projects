@@ -1,5 +1,6 @@
 import {
 	App,
+	Modal,
 	PluginSettingTab,
 	Setting,
 	AbstractInputSuggest,
@@ -9,6 +10,39 @@ import {
 } from "obsidian";
 import { TAG_FIELDS } from "./tags";
 import type GHProjectsPlugin from "./main";
+
+class ConfirmModal extends Modal {
+	private onConfirm: () => void;
+
+	constructor(app: App, onConfirm: () => void) {
+		super(app);
+		this.onConfirm = onConfirm;
+	}
+
+	onOpen(): void {
+		const { contentEl } = this;
+		contentEl.createEl("p", {
+			text: "This will delete all Markdown files in your output folder and trigger a fresh sync. Cover images will be kept.",
+		});
+		new Setting(contentEl)
+			.addButton((btn) =>
+				btn.setButtonText("Cancel").onClick(() => this.close())
+			)
+			.addButton((btn) =>
+				btn
+					.setButtonText("Reset")
+					.setWarning()
+					.onClick(() => {
+						this.close();
+						this.onConfirm();
+					})
+			);
+	}
+
+	onClose(): void {
+		this.contentEl.empty();
+	}
+}
 
 class FolderSuggest extends AbstractInputSuggest<TFolder> {
 	getSuggestions(inputStr: string): TFolder[] {
@@ -292,6 +326,20 @@ export class GHProjectsSettingTab extends PluginSettingTab {
 					.onChange(async (value) => {
 						this.plugin.settings.debugMode = value;
 						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Reset and re-sync")
+			.setDesc("Delete all synced Markdown files and trigger a fresh sync. Cover images are kept.")
+			.addButton((button) =>
+				button
+					.setButtonText("Reset")
+					.setWarning()
+					.onClick(() => {
+						new ConfirmModal(this.app, () => {
+							void this.plugin.resetAndSync();
+						}).open();
 					})
 			);
 	}

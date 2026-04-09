@@ -127,6 +127,17 @@ export default class GHProjectsPlugin extends Plugin {
 		}
 	}
 
+	async resetAndSync(): Promise<void> {
+		if (this.syncManager.isSyncing) return;
+		this.updateStatusBar(true);
+		try {
+			const result = await this.syncManager.resetAndSync();
+			new Notice(`Reset complete: ${result.deleted} removed, ${result.synced} synced.`);
+		} finally {
+			this.updateStatusBar(false);
+		}
+	}
+
 	private updateStatusBar(syncing = false): void {
 		if (!this.statusBarEl) return;
 		this.statusBarEl.setText(syncing ? "GH: syncing..." : "");

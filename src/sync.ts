@@ -1,7 +1,7 @@
 import { normalizePath, requestUrl, Notice } from "obsidian";
 import type { App } from "obsidian";
 import type { GHProjectsSettings, RepoData } from "./types";
-import { fetchRepos, GitHubAuthError, GitHubRateLimitError } from "./github";
+import { fetchRepos, GitHubAuthError, GitHubRateLimitError, isRequestUrlError } from "./github";
 import { renderBody, renderFrontmatter } from "./markdown";
 import { renderBodyWithTemplate } from "./templater";
 import type { Logger } from "./logger";
@@ -39,11 +39,19 @@ export function slugifyRepoName(
 	return slug;
 }
 
+function extractFrontmatterKeys(content: string): string[] {
+	const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+	if (!fmMatch?.[1]) return [];
+	return fmMatch[1]
+		.split("\n")
+		.filter((line) => /^[a-z_]+:/.test(line))
+		.map((line) => line.split(":")[0] ?? "")
+		.filter(Boolean);
+}
+
 function extractSyncedAt(content: string): string | null {
 	const match = content.match(/^synced_at:\s*(.+)$/m);
-	if (!match) return null;
-	const value = match[1];
-	return value ? value.trim() : null;
+	return match?.[1]?.trim() ?? null;
 }
 
 export class SyncManager {
@@ -94,6 +102,7 @@ export class SyncManager {
 			}
 
 			for (const repo of repos) {
+				this.logger.debug(`Processing repo: ${repo.fullName}`);
 				try {
 					const updated = await this.syncRepo(repo, settings);
 					if (updated) {
@@ -128,22 +137,51 @@ export class SyncManager {
 		return { synced, skipped, errors };
 	}
 
+	async resetAndSync(): Promise<{ deleted: number; synced: number; skipped: number; errors: number }> {
+		if (this.syncing) {
+			new Notice("GitHub sync is already running.");
+			return { deleted: 0, synced: 0, skipped: 0, errors: 0 };
+		}
+
+		const settings = this.getSettings();
+		const outputFolder = normalizePath(settings.outputFolder);
+		const filesToDelete = this.app.vault
+			.getMarkdownFiles()
+			.filter((f) => f.path.startsWith(outputFolder + "/") && !f.path.slice(outputFolder.length + 1).includes("/"));
+
+		let deleted = 0;
+		for (const file of filesToDelete) {
+			await this.app.fileManager.trashFile(file);
+			deleted++;
+		}
+
+		this.logger.info(`Reset: deleted ${deleted} file(s) from ${outputFolder}`);
+
+		const result = await this.run();
+		return { deleted, ...result };
+	}
+
 	private async syncRepo(repo: RepoData, settings: GHProjectsSettings): Promise<boolean> {
 		const slug = slugifyRepoName(repo.name, repo.owner, settings.githubUsername, settings.includeOrgRepos);
 		const filePath = normalizePath(`${settings.outputFolder}/${slug}.md`);
 		const existingFile = this.app.vault.getFileByPath(filePath);
+		const coverPath = repo.openGraphImageUrl ? buildCoverPath(settings.assetsFolder, slug) : null;
 
 		if (existingFile) {
 			const content = await this.app.vault.read(existingFile);
-			const syncedAt = extractSyncedAt(content);
-			if (!shouldUpdateRepo(repo.updatedAt, syncedAt)) {
-				return false;
+			const needsMigration = this.isMissingFrontmatterFields(content, repo, coverPath, settings);
+			if (!needsMigration) {
+				const syncedAt = extractSyncedAt(content);
+				if (!shouldUpdateRepo(repo.updatedAt, syncedAt)) {
+					this.logger.debug(`Skipping ${repo.name}: up-to-date (synced_at: ${syncedAt})`);
+					return false;
+				}
+			} else {
+				this.logger.debug(`Migrating ${repo.name}: missing frontmatter fields`);
 			}
 		}
 
-		let coverPath: string | null = null;
-		if (repo.openGraphImageUrl) {
-			coverPath = buildCoverPath(settings.assetsFolder, slug);
+		if (coverPath && repo.openGraphImageUrl) {
 			await this.downloadCoverImage(repo.openGraphImageUrl, coverPath, repo.updatedAt);
 		}
 
@@ -157,8 +195,10 @@ export class SyncManager {
 		const fileContent = `${frontmatter}\n\n${body}\n`;
 
 		if (existingFile) {
+			this.logger.debug(`Updating ${filePath}`);
 			await this.app.vault.modify(existingFile, fileContent);
 		} else {
+			this.logger.debug(`Creating ${filePath}`);
 			await this.app.vault.create(filePath, fileContent);
 		}
 
@@ -172,10 +212,12 @@ export class SyncManager {
 		if (existingFile) {
 			const repoTime = new Date(repoUpdatedAt).getTime();
 			if (existingFile.stat.mtime >= repoTime) {
+				this.logger.debug(`Cover image cached: ${vaultPath}`);
 				return;
 			}
 		}
 
+		this.logger.debug(`Downloading cover image: ${vaultPath}`);
 		const MAX_RETRIES = 3;
 		for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
 			try {
@@ -187,14 +229,8 @@ export class SyncManager {
 				}
 				return;
 			} catch (err: unknown) {
-				const status = (typeof err === "object" && err !== null && "status" in err)
-					? (err as { status: number }).status
-					: null;
-
-				if (status === 429 && attempt < MAX_RETRIES) {
-					const retryAfter = (typeof err === "object" && err !== null && "headers" in err)
-						? Number((err as { headers: Record<string, string> }).headers["retry-after"]) || 0
-						: 0;
+				if (isRequestUrlError(err) && err.status === 429 && attempt < MAX_RETRIES) {
+					const retryAfter = Number(err.headers["retry-after"]) || 0;
 					const delay = Math.max(retryAfter * 1000, 1000 * Math.pow(2, attempt - 1));
 					this.logger.debug(`Rate limited downloading ${vaultPath}, retrying in ${delay}ms (attempt ${attempt}/${MAX_RETRIES})`);
 					await this.sleep(delay);
@@ -207,24 +243,39 @@ export class SyncManager {
 		}
 	}
 
+	private isMissingFrontmatterFields(
+		existingContent: string,
+		repo: RepoData,
+		coverPath: string | null,
+		settings: GHProjectsSettings
+	): boolean {
+		const expectedFrontmatter = renderFrontmatter(repo, coverPath, settings);
+		const expectedKeys = extractFrontmatterKeys(expectedFrontmatter);
+		const existingKeys = extractFrontmatterKeys(existingContent);
+		return expectedKeys.some((key) => !existingKeys.includes(key));
+	}
+
 	private sleep(ms: number): Promise<void> {
 		return new Promise((resolve) => setTimeout(resolve, ms));
 	}
 
 	private detectOrphans(repos: RepoData[], settings: GHProjectsSettings): void {
 		const outputFolder = normalizePath(settings.outputFolder);
-		const repoNames = new Set(repos.map((r) => r.name));
+		const repoSlugs = new Set(
+			repos.map((r) => slugifyRepoName(r.name, r.owner, settings.githubUsername, settings.includeOrgRepos))
+		);
 		const orphans: string[] = [];
 
 		for (const file of this.app.vault.getMarkdownFiles()) {
 			if (!file.path.startsWith(outputFolder + "/")) continue;
 			const basename = file.basename;
-			if (!repoNames.has(basename)) {
+			if (!repoSlugs.has(basename)) {
 				orphans.push(basename);
 			}
 		}
 
 		if (orphans.length > 0) {
+			this.logger.debug(`Detected ${orphans.length} orphan(s): ${orphans.join(", ")}`);
 			new Notice(
 				`GitHub sync: ${orphans.length} file(s) no longer match filters: ${orphans.slice(0, 3).join(", ")}${orphans.length > 3 ? "..." : ""}`
 			);
