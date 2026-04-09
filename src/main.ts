@@ -118,6 +118,7 @@ export default class GHProjectsPlugin extends Plugin {
 	}
 
 	private async runSync(): Promise<void> {
+		if (this.syncManager.isSyncing) return;
 		this.updateStatusBar(true);
 		try {
 			await this.syncManager.run();
