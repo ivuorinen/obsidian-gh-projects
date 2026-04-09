@@ -46,7 +46,7 @@ export async function renderWithTemplater(
 	}
 }
 
-function substituteTemplateVars(template: string, repo: RepoData): string {
+export function substituteTemplateVars(template: string, repo: RepoData): string {
 	const replacements: Record<string, string> = {
 		"{{repo.name}}": repo.name,
 		"{{repo.description}}": repo.description ?? "",
