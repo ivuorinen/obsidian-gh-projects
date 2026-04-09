@@ -42,7 +42,7 @@ export function renderFrontmatter(repo: RepoData, coverPath: string | null): str
 		lines.push(`cover: ${coverPath}`);
 	}
 
-	lines.push(`pushed_at: ${repo.pushedAt}`);
+	lines.push(`pushed_at: ${repo.pushedAt ?? ""}`);
 	lines.push(`updated_at: ${repo.updatedAt}`);
 	lines.push(`synced_at: ${new Date().toISOString()}`);
 	lines.push("---");

@@ -77,7 +77,7 @@ export class SyncManager {
 					} else {
 						skipped++;
 					}
-				} catch (err) {
+				} catch (err: unknown) {
 					console.error(`Failed to sync repo ${repo.name}:`, err);
 					errors++;
 				}
@@ -86,7 +86,7 @@ export class SyncManager {
 			this.detectOrphans(repos, settings);
 
 			new Notice(`GitHub sync complete: ${synced} updated, ${skipped} unchanged.`);
-		} catch (err) {
+		} catch (err: unknown) {
 			if (err instanceof GitHubAuthError) {
 				new Notice("GitHub token is invalid or expired. Check plugin settings.");
 			} else if (err instanceof GitHubRateLimitError) {
@@ -157,7 +157,7 @@ export class SyncManager {
 			} else {
 				await this.app.vault.createBinary(normalizedPath, response.arrayBuffer);
 			}
-		} catch (err) {
+		} catch (err: unknown) {
 			console.warn(`Failed to download cover image for ${vaultPath}:`, err);
 		}
 	}
