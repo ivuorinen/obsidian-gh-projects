@@ -118,9 +118,25 @@ export default class GHProjectsPlugin extends Plugin {
 	}
 
 	private async runSync(): Promise<void> {
+		if (this.syncManager.isSyncing) return;
 		this.updateStatusBar(true);
 		try {
 			await this.syncManager.run();
+		} finally {
+			this.updateStatusBar(false);
+		}
+	}
+
+	async resetAndSync(): Promise<void> {
+		if (this.syncManager.isSyncing) return;
+		this.updateStatusBar(true);
+		try {
+			const result = await this.syncManager.resetAndSync();
+			new Notice(`Reset complete: ${result.deleted} removed, ${result.synced} synced.`);
+		} catch (err: unknown) {
+			const message = err instanceof Error ? err.message : "Unknown error";
+			new Notice(`Reset failed: ${message}`);
+			this.logger.error("Reset and re-sync failed:", err);
 		} finally {
 			this.updateStatusBar(false);
 		}

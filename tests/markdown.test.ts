@@ -57,14 +57,14 @@ describe("renderFrontmatter", () => {
 		const result = renderFrontmatter(makeRepo(), "GitHub/assets/my-project.png", DEFAULT_SETTINGS);
 
 		expect(result).toContain("---");
-		expect(result).toContain("name: my-project");
+		expect(result).toContain('name: "my-project"');
 		expect(result).toContain('description: "A cool project"');
 		expect(result).toContain("url: https://github.com/user/my-project");
 		expect(result).toContain("private: false");
-		expect(result).toContain("language: TypeScript");
+		expect(result).toContain('language: "TypeScript"');
 		expect(result).toContain("  - TypeScript");
 		expect(result).toContain("  - cli");
-		expect(result).toContain("license: MIT");
+		expect(result).toContain('license: "MIT"');
 		expect(result).toContain("stars: 42");
 		expect(result).toContain("forks: 5");
 		expect(result).toContain("watchers: 10");
@@ -87,6 +87,62 @@ describe("renderFrontmatter", () => {
 	it("escapes quotes in description", () => {
 		const result = renderFrontmatter(makeRepo({ description: 'A "quoted" project' }), null, DEFAULT_SETTINGS);
 		expect(result).toContain('description: "A \\"quoted\\" project"');
+	});
+});
+
+describe("renderFrontmatter tags integration", () => {
+	it("does not render tags when enableTags is false", () => {
+		const result = renderFrontmatter(makeRepo(), null, { ...DEFAULT_SETTINGS, enableTags: false });
+		expect(result).not.toContain("tags:");
+	});
+
+	it("renders tags in frontmatter when enableTags is true", () => {
+		const settings = {
+			...DEFAULT_SETTINGS,
+			enableTags: true,
+			tagPrefix: "projects/github",
+			tagFields: ["owner", "fullName", "name", "isPrivate", "primaryLanguage", "languages", "topics", "license"],
+		};
+		const result = renderFrontmatter(makeRepo(), null, settings);
+
+		expect(result).toContain("tags:");
+		expect(result).toContain("  - projects/github/repo/user");
+		expect(result).toContain("  - projects/github/repo/user/my-project");
+		expect(result).toContain("  - projects/github/name/my-project");
+		expect(result).toContain("  - projects/github/visibility/public");
+		expect(result).toContain("  - projects/github/language/typescript");
+		expect(result).toContain("  - projects/github/language/javascript");
+		expect(result).toContain("  - projects/github/topic/cli");
+		expect(result).toContain("  - projects/github/topic/tools");
+		expect(result).toContain("  - projects/github/license/mit");
+	});
+
+	it("renders tags inside the frontmatter delimiters", () => {
+		const settings = {
+			...DEFAULT_SETTINGS,
+			enableTags: true,
+			tagPrefix: "gh",
+			tagFields: ["name"],
+		};
+		const result = renderFrontmatter(makeRepo(), null, settings);
+		const lines = result.split("\n");
+		const firstDelimiter = lines.indexOf("---");
+		const lastDelimiter = lines.lastIndexOf("---");
+		const tagsLine = lines.findIndex((l) => l.startsWith("tags:"));
+
+		expect(tagsLine).toBeGreaterThan(firstDelimiter);
+		expect(tagsLine).toBeLessThan(lastDelimiter);
+	});
+
+	it("renders no tags block when tagFields is empty", () => {
+		const settings = {
+			...DEFAULT_SETTINGS,
+			enableTags: true,
+			tagPrefix: "projects/github",
+			tagFields: [],
+		};
+		const result = renderFrontmatter(makeRepo(), null, settings);
+		expect(result).not.toContain("tags:");
 	});
 });
 

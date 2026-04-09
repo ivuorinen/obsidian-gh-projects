@@ -17,19 +17,7 @@ export function slugifyTagValue(value: string): string {
 		.replace(/^-|-$/g, "");
 }
 
-type TagField =
-	| "owner"
-	| "fullName"
-	| "name"
-	| "isPrivate"
-	| "isFork"
-	| "isArchived"
-	| "primaryLanguage"
-	| "languages"
-	| "topics"
-	| "license";
-
-export const TAG_FIELDS: readonly TagField[] = [
+export const TAG_FIELDS = [
 	"owner",
 	"fullName",
 	"name",
@@ -41,6 +29,8 @@ export const TAG_FIELDS: readonly TagField[] = [
 	"topics",
 	"license",
 ] as const;
+
+export type TagField = (typeof TAG_FIELDS)[number];
 
 export function generateTags(
 	repo: RepoData,

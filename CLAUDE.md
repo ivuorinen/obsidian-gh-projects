@@ -33,21 +33,26 @@ Obsidian plugin that syncs GitHub repositories into markdown files with YAML fro
 | Markdown | `src/markdown.ts` | Renders `RepoData` into YAML frontmatter + markdown body with issue/PR tables |
 | Templater | `src/templater.ts` | `{{mustache}}`-style variable substitution and `{{#issues}}...{{/issues}}` block iteration for custom templates |
 | Settings UI | `src/settings.ts` | Setting tab with `FolderSuggest`/`FileSuggest` autocomplete, secure token via `SecretStorage` |
-| Types | `src/types.ts` | All interfaces (`GHProjectsSettings`, `RepoData`, `IssueData`, `PRData`) and `DEFAULT_SETTINGS` |
+| Schemas | `src/schemas.ts` | Zod schemas for GitHub GraphQL API responses and settings validation; all `GraphQL*` types are inferred from schemas via `z.infer<>` |
+| Tags | `src/tags.ts` | `generateTags()` — configurable tag generation from `RepoData` fields with slugification; `TAG_FIELDS` constant |
+| Logger | `src/logger.ts` | `createLogger()` — prefixed `[GH Projects]` logger with debug mode gating and token redaction |
+| Types | `src/types.ts` | App-level interfaces (`GHProjectsSettings`, `RepoData`, `IssueData`, `PRData`) and `DEFAULT_SETTINGS` |
 
 ### Data Flow
 
-```
+```text
 Plugin.runSync()
   → SyncManager.run()
     → fetchRepos() [github.ts] — GraphQL with cursor pagination
+      → graphQLResponseSchema.parse() — Zod runtime validation
     → for each RepoData:
+        slugifyRepoName() — safe filename from repo name (handles dots, org prefixes)
         shouldUpdateRepo() — compare updatedAt vs synced_at in existing frontmatter
-        downloadCoverImage() — fetch social preview to assets folder
-        renderFrontmatter() + renderBodyWithTemplate() or renderBody()
+        downloadCoverImage() — fetch social preview with retry/backoff on 429
+        renderFrontmatter(settings) — YAML frontmatter + optional tag generation
+        renderBodyWithTemplate() or renderBody()
         vault.create/modify()
     → detectOrphans() — find files no longer matching filters
-  → status bar update
 ```
 
 ### Key Patterns
@@ -57,3 +62,6 @@ Plugin.runSync()
 - **SyncManager injection**: Receives `getSettings()` and `getToken()` callbacks rather than direct references, making it testable without the plugin instance.
 - **Coverage scope**: `src/main.ts` and `src/settings.ts` are excluded from coverage (heavy Obsidian UI coupling).
 - **Test data factories**: Tests use `makeRepo()`, `makeRepoNode()`, `makeGraphQLPage()`, and `makeApp()` helpers to build fixtures.
+- **Zod at system boundaries**: All external data (GitHub API responses, `loadData()` settings) is parsed through Zod schemas in `src/schemas.ts`. GraphQL types are inferred via `z.infer<>` — no manually maintained interfaces for API data.
+- **Logger with token redaction**: `createLogger()` receives `getDebugMode` and `getToken` callbacks. All log output is scanned for the token value and redacted. `debug`/`info` are gated by `debugMode` setting; `warn`/`error` always emit.
+- **Cover image retry**: `downloadCoverImage()` retries up to 3 times on HTTP 429 with exponential backoff (1s, 2s, 4s), respecting the `Retry-After` header.

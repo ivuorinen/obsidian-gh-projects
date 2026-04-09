@@ -8,6 +8,8 @@ import type { Logger } from "../src/logger";
 
 vi.mock("../src/github", () => ({
 	fetchRepos: vi.fn(),
+	isRequestUrlError: (err: unknown): boolean =>
+		typeof err === "object" && err !== null && "status" in err && typeof (err as Record<string, unknown>).status === "number",
 	GitHubAuthError: class GitHubAuthError extends Error {
 		constructor() {
 			super("GitHub token is invalid or expired. Check plugin settings.");
@@ -39,6 +41,9 @@ function makeApp(overrides: Record<string, unknown> = {}): App {
 			createFolder: vi.fn(async () => {}),
 			createBinary: vi.fn(async () => {}),
 			modifyBinary: vi.fn(async () => {}),
+		},
+		fileManager: {
+			trashFile: vi.fn(async () => {}),
 		},
 		workspace: { onLayoutReady: vi.fn() },
 		...overrides,
@@ -452,9 +457,9 @@ describe("SyncManager syncRepo skipped path (line 119)", () => {
 			if (p.endsWith(".md")) return existingFile;
 			return null;
 		});
-		// synced_at is newer than updatedAt — shouldUpdateRepo returns false
+		// All frontmatter keys present, synced_at newer than updatedAt — skip
 		(app.vault.read as ReturnType<typeof vi.fn>).mockResolvedValue(
-			"---\nsynced_at: 2026-12-31T00:00:00Z\n---\n"
+			"---\nname: my-repo\nowner: user\nfull_name: user/my-repo\ndescription: \"\"\nurl: https://github.com/user/my-repo\nprivate: false\nis_fork: false\nis_archived: false\nlanguage: \"\"\nlicense: \"\"\nstars: 0\nforks: 0\nwatchers: 0\nopen_issues: 0\nopen_prs: 0\npushed_at: 2026-01-01T00:00:00Z\nupdated_at: 2026-01-01T00:00:00Z\nsynced_at: 2026-12-31T00:00:00Z\n---\n"
 		);
 		const repo = makeRepo({ updatedAt: "2026-01-01T00:00:00Z" });
 		vi.mocked(fetchRepos).mockResolvedValue([repo]);
@@ -493,6 +498,8 @@ describe("SyncManager templatePath branch (line 131)", () => {
 describe("SyncManager.downloadCoverImage()", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		// Mock sleep to avoid real delays in retry tests
+		vi.spyOn(SyncManager.prototype as unknown as { sleep: () => Promise<void> }, "sleep").mockResolvedValue(undefined);
 	});
 
 	it("calls createBinary when image download succeeds and no existing image file", async () => {
@@ -647,6 +654,7 @@ describe("SyncManager.downloadCoverImage()", () => {
 		const manager = new SyncManager(app, () => settings, () => "mytoken", logger);
 		await manager.run();
 		expect(logger.debug).toHaveBeenCalledWith(expect.stringContaining("Rate limited"));
+		expect(logger.debug).toHaveBeenCalledWith(expect.stringContaining("retry 1/3"));
 		expect((app.vault.createBinary as ReturnType<typeof vi.fn>)).toHaveBeenCalled();
 	});
 
@@ -668,7 +676,7 @@ describe("SyncManager.downloadCoverImage()", () => {
 		const logger = makeLogger();
 		const manager = new SyncManager(app, () => settings, () => "mytoken", logger);
 		await manager.run();
-		// Should have retried twice (attempts 1 and 2), then failed on attempt 3
+		// Should have retried 3 times (retries 0-2), then failed on retry 3
 		expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("Failed to download"), expect.anything());
 		expect((app.vault.createBinary as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
 	});
@@ -698,5 +706,49 @@ describe("SyncManager.downloadCoverImage()", () => {
 			return typeof arg === "object" && arg !== null && (arg as { url?: string }).url === "https://opengraph.github.com/my-repo";
 		});
 		expect(imageCalls).toHaveLength(1);
+	});
+});
+
+describe("SyncManager.resetAndSync()", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it("deletes markdown files in output folder and triggers sync", async () => {
+		const mdFile = { path: "GitHub/old-repo.md", basename: "old-repo" };
+		const app = makeApp();
+		(app.vault.getMarkdownFiles as ReturnType<typeof vi.fn>).mockReturnValue([mdFile]);
+		vi.mocked(fetchRepos).mockResolvedValue([]);
+		const settings = { ...DEFAULT_SETTINGS, githubUsername: "user", outputFolder: "GitHub" };
+		const logger = makeLogger();
+		const manager = new SyncManager(app, () => settings, () => "mytoken", logger);
+		const result = await manager.resetAndSync();
+		expect((app.fileManager.trashFile as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith(mdFile);
+		expect(result.deleted).toBe(1);
+		expect(logger.info).toHaveBeenCalledWith(expect.stringContaining("deleted 1"));
+	});
+
+	it("does not delete files in subfolders", async () => {
+		const topFile = { path: "GitHub/repo.md", basename: "repo" };
+		const subFile = { path: "GitHub/sub/nested.md", basename: "nested" };
+		const app = makeApp();
+		(app.vault.getMarkdownFiles as ReturnType<typeof vi.fn>).mockReturnValue([topFile, subFile]);
+		vi.mocked(fetchRepos).mockResolvedValue([]);
+		const settings = { ...DEFAULT_SETTINGS, githubUsername: "user", outputFolder: "GitHub" };
+		const manager = new SyncManager(app, () => settings, () => "mytoken", makeLogger());
+		const result = await manager.resetAndSync();
+		expect(result.deleted).toBe(1);
+		expect((app.fileManager.trashFile as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith(topFile);
+		expect((app.fileManager.trashFile as ReturnType<typeof vi.fn>)).not.toHaveBeenCalledWith(subFile);
+	});
+
+	it("skips if sync is already running", async () => {
+		const app = makeApp();
+		vi.mocked(fetchRepos).mockImplementation(() => new Promise(() => {}));
+		const settings = { ...DEFAULT_SETTINGS, githubUsername: "user" };
+		const manager = new SyncManager(app, () => settings, () => "mytoken", makeLogger());
+		void manager.run();
+		const result = await manager.resetAndSync();
+		expect(result.deleted).toBe(0);
 	});
 });

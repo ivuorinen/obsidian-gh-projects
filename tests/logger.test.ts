@@ -86,15 +86,17 @@ describe("createLogger", () => {
       );
     });
 
-    it("redacts token from Error messages", () => {
+    it("redacts token from Error messages and stack traces", () => {
       const spy = vi.spyOn(console, "error").mockImplementation(() => {});
       const logger = createLogger(makeDeps({ getToken: () => "ghp_secret123" }));
       logger.error("failed:", new Error("token ghp_secret123 invalid"));
-      expect(spy).toHaveBeenCalledWith(
-        "[GH Projects]",
-        "failed:",
-        "Error: token [REDACTED] invalid"
-      );
+      const redacted = spy.mock.calls[0][2] as Error;
+      expect(redacted).toBeInstanceOf(Error);
+      expect(redacted.message).toBe("token [REDACTED] invalid");
+      expect(redacted.message).not.toContain("ghp_secret123");
+      if (redacted.stack) {
+        expect(redacted.stack).not.toContain("ghp_secret123");
+      }
     });
 
     it("redacts token from plain objects", () => {

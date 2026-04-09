@@ -28,12 +28,12 @@ export class GitHubRateLimitError extends Error {
   }
 }
 
-interface RequestUrlError {
+export interface RequestUrlError {
   status: number;
   headers: Record<string, string>;
 }
 
-function isRequestUrlError(err: unknown): err is RequestUrlError {
+export function isRequestUrlError(err: unknown): err is RequestUrlError {
   return (
     typeof err === "object" &&
     err !== null &&
