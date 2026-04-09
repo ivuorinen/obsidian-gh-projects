@@ -118,6 +118,9 @@ export const settingsSchema = z.object({
   includeArchived: z.boolean(),
   includeOrgRepos: z.boolean(),
   debugMode: z.boolean(),
+  enableTags: z.boolean(),
+  tagPrefix: z.string(),
+  tagFields: z.array(z.string()),
 }).partial();
 
 // --- GraphQL variables ---

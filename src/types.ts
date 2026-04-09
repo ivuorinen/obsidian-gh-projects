@@ -15,6 +15,9 @@ export interface GHProjectsSettings {
   includeArchived: boolean;
   includeOrgRepos: boolean;
   debugMode: boolean;
+  enableTags: boolean;
+  tagPrefix: string;
+  tagFields: string[];
 }
 
 export const DEFAULT_SETTINGS: GHProjectsSettings = {
@@ -30,6 +33,13 @@ export const DEFAULT_SETTINGS: GHProjectsSettings = {
   includeArchived: false,
   includeOrgRepos: false,
   debugMode: false,
+  enableTags: false,
+  tagPrefix: "projects/github",
+  tagFields: [
+    "owner", "fullName", "name",
+    "isPrivate", "isFork", "isArchived",
+    "primaryLanguage", "languages", "topics", "license",
+  ],
 };
 
 // --- GitHub Data (app-level, constructed by parser functions) ---

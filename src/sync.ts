@@ -153,7 +153,7 @@ export class SyncManager {
 		} else {
 			body = renderBody(repo);
 		}
-		const frontmatter = renderFrontmatter(repo, coverPath);
+		const frontmatter = renderFrontmatter(repo, coverPath, settings);
 		const fileContent = `${frontmatter}\n\n${body}\n`;
 
 		if (existingFile) {

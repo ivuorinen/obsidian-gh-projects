@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { renderFrontmatter, renderBody, renderRepoFile } from "../src/markdown";
 import type { RepoData } from "../src/types";
+import { DEFAULT_SETTINGS } from "../src/types";
 
 function makeRepo(overrides: Partial<RepoData> = {}): RepoData {
 	return {
@@ -53,7 +54,7 @@ function makeRepo(overrides: Partial<RepoData> = {}): RepoData {
 
 describe("renderFrontmatter", () => {
 	it("renders all fields in YAML frontmatter", () => {
-		const result = renderFrontmatter(makeRepo(), "GitHub/assets/my-project.png");
+		const result = renderFrontmatter(makeRepo(), "GitHub/assets/my-project.png", DEFAULT_SETTINGS);
 
 		expect(result).toContain("---");
 		expect(result).toContain("name: my-project");
@@ -74,24 +75,24 @@ describe("renderFrontmatter", () => {
 	});
 
 	it("omits cover when no image path", () => {
-		const result = renderFrontmatter(makeRepo({ openGraphImageUrl: null }), null);
+		const result = renderFrontmatter(makeRepo({ openGraphImageUrl: null }), null, DEFAULT_SETTINGS);
 		expect(result).not.toContain("cover:");
 	});
 
 	it("handles null description", () => {
-		const result = renderFrontmatter(makeRepo({ description: null }), null);
+		const result = renderFrontmatter(makeRepo({ description: null }), null, DEFAULT_SETTINGS);
 		expect(result).toContain('description: ""');
 	});
 
 	it("escapes quotes in description", () => {
-		const result = renderFrontmatter(makeRepo({ description: 'A "quoted" project' }), null);
+		const result = renderFrontmatter(makeRepo({ description: 'A "quoted" project' }), null, DEFAULT_SETTINGS);
 		expect(result).toContain('description: "A \\"quoted\\" project"');
 	});
 });
 
 describe("renderFrontmatter null pushedAt (line 45)", () => {
 	it("renders empty string for pushed_at when pushedAt is null", () => {
-		const result = renderFrontmatter(makeRepo({ pushedAt: null }), null);
+		const result = renderFrontmatter(makeRepo({ pushedAt: null }), null, DEFAULT_SETTINGS);
 		expect(result).toContain("pushed_at: ");
 		// Should not contain a date value
 		expect(result).toMatch(/pushed_at: \n/);
@@ -201,7 +202,7 @@ describe("formatDate fallback branch (line 8)", () => {
 
 describe("renderRepoFile", () => {
 	it("combines frontmatter and body", () => {
-		const result = renderRepoFile(makeRepo(), "GitHub/assets/my-project.png");
+		const result = renderRepoFile(makeRepo(), "GitHub/assets/my-project.png", DEFAULT_SETTINGS);
 		expect(result).toMatch(/^---\n/);
 		expect(result).toContain("---\n\n# my-project");
 	});

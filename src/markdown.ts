@@ -1,4 +1,5 @@
-import type { RepoData, IssueData, PRData } from "./types";
+import type { RepoData, IssueData, PRData, GHProjectsSettings } from "./types";
+import { generateTags } from "./tags";
 
 function escapeYamlString(str: string): string {
 	return str.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
@@ -12,7 +13,7 @@ function renderYamlList(items: string[], indent = 2): string {
 	return items.map((item) => `${" ".repeat(indent)}- ${item}`).join("\n");
 }
 
-export function renderFrontmatter(repo: RepoData, coverPath: string | null): string {
+export function renderFrontmatter(repo: RepoData, coverPath: string | null, settings: GHProjectsSettings): string {
 	const lines: string[] = ["---"];
 
 	lines.push(`name: ${repo.name}`);
@@ -49,6 +50,15 @@ export function renderFrontmatter(repo: RepoData, coverPath: string | null): str
 	lines.push(`pushed_at: ${repo.pushedAt ?? ""}`);
 	lines.push(`updated_at: ${repo.updatedAt}`);
 	lines.push(`synced_at: ${new Date().toISOString()}`);
+
+	if (settings.enableTags) {
+		const tags = generateTags(repo, settings.tagPrefix, settings.tagFields);
+		if (tags.length > 0) {
+			lines.push("tags:");
+			lines.push(renderYamlList(tags));
+		}
+	}
+
 	lines.push("---");
 
 	return lines.join("\n");
@@ -97,8 +107,8 @@ export function renderBody(repo: RepoData): string {
 	return sections.join("\n\n");
 }
 
-export function renderRepoFile(repo: RepoData, coverPath: string | null): string {
-	const frontmatter = renderFrontmatter(repo, coverPath);
+export function renderRepoFile(repo: RepoData, coverPath: string | null, settings: GHProjectsSettings): string {
+	const frontmatter = renderFrontmatter(repo, coverPath, settings);
 	const body = renderBody(repo);
 	return `${frontmatter}\n\n${body}\n`;
 }

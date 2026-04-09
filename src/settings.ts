@@ -7,6 +7,7 @@ import {
 	TFile,
 	SecretComponent,
 } from "obsidian";
+import { TAG_FIELDS } from "./tags";
 import type GHProjectsPlugin from "./main";
 
 class FolderSuggest extends AbstractInputSuggest<TFolder> {
@@ -229,6 +230,56 @@ export class GHProjectsSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					})
 			);
+
+		new Setting(containerEl).setName("Tags").setHeading();
+
+		new Setting(containerEl)
+			.setName("Enable tags")
+			.setDesc("Add tags to repo files based on repository metadata.")
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.enableTags)
+					.onChange(async (value) => {
+						this.plugin.settings.enableTags = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Tag prefix")
+			.setDesc("Prefix for all generated tags.")
+			.addText((text) =>
+				text
+					// eslint-disable-next-line obsidianmd/ui/sentence-case -- path-style placeholder
+					.setPlaceholder("projects/github")
+					.setValue(this.plugin.settings.tagPrefix)
+					.onChange(async (value) => {
+						this.plugin.settings.tagPrefix = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		for (const field of TAG_FIELDS) {
+			new Setting(containerEl)
+				.setName(`Tag: ${field}`)
+				.setDesc(`Include ${field} in generated tags.`)
+				.addToggle((toggle) =>
+					toggle
+						.setValue(this.plugin.settings.tagFields.includes(field))
+						.onChange(async (value) => {
+							if (value) {
+								if (!this.plugin.settings.tagFields.includes(field)) {
+									this.plugin.settings.tagFields.push(field);
+								}
+							} else {
+								this.plugin.settings.tagFields = this.plugin.settings.tagFields.filter(
+									(f) => f !== field
+								);
+							}
+							await this.plugin.saveSettings();
+						})
+				);
+		}
 
 		new Setting(containerEl).setName("Advanced").setHeading();
 
