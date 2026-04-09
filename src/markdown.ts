@@ -16,15 +16,15 @@ function renderYamlList(items: string[], indent = 2): string {
 export function renderFrontmatter(repo: RepoData, coverPath: string | null, settings: GHProjectsSettings): string {
 	const lines: string[] = ["---"];
 
-	lines.push(`name: ${repo.name}`);
-	lines.push(`owner: ${repo.owner}`);
-	lines.push(`full_name: ${repo.fullName}`);
+	lines.push(`name: "${escapeYamlString(repo.name)}"`);
+	lines.push(`owner: "${escapeYamlString(repo.owner)}"`);
+	lines.push(`full_name: "${escapeYamlString(repo.fullName)}"`);
 	lines.push(`description: "${escapeYamlString(repo.description ?? "")}"`);
 	lines.push(`url: ${repo.url}`);
 	lines.push(`private: ${repo.isPrivate}`);
 	lines.push(`is_fork: ${repo.isFork}`);
 	lines.push(`is_archived: ${repo.isArchived}`);
-	lines.push(`language: ${repo.primaryLanguage ?? ""}`);
+	lines.push(`language: "${escapeYamlString(repo.primaryLanguage ?? "")}"`);
 
 	if (repo.languages.length > 0) {
 		lines.push("languages:");
@@ -36,7 +36,7 @@ export function renderFrontmatter(repo: RepoData, coverPath: string | null, sett
 		lines.push(renderYamlList(repo.topics));
 	}
 
-	lines.push(`license: ${repo.license ?? ""}`);
+	lines.push(`license: "${escapeYamlString(repo.license ?? "")}"`);
 	lines.push(`stars: ${repo.stars}`);
 	lines.push(`forks: ${repo.forks}`);
 	lines.push(`watchers: ${repo.watchers}`);
