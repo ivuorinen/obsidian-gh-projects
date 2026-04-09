@@ -155,16 +155,39 @@ export class SyncManager {
 			}
 		}
 
-		try {
-			const response = await requestUrl({ url: imageUrl });
-			if (existingFile) {
-				await this.app.vault.modifyBinary(existingFile, response.arrayBuffer);
-			} else {
-				await this.app.vault.createBinary(normalizedPath, response.arrayBuffer);
+		const MAX_RETRIES = 3;
+		for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+			try {
+				const response = await requestUrl({ url: imageUrl });
+				if (existingFile) {
+					await this.app.vault.modifyBinary(existingFile, response.arrayBuffer);
+				} else {
+					await this.app.vault.createBinary(normalizedPath, response.arrayBuffer);
+				}
+				return;
+			} catch (err: unknown) {
+				const status = (typeof err === "object" && err !== null && "status" in err)
+					? (err as { status: number }).status
+					: null;
+
+				if (status === 429 && attempt < MAX_RETRIES) {
+					const retryAfter = (typeof err === "object" && err !== null && "headers" in err)
+						? Number((err as { headers: Record<string, string> }).headers["retry-after"]) || 0
+						: 0;
+					const delay = Math.max(retryAfter * 1000, 1000 * Math.pow(2, attempt - 1));
+					this.logger.debug(`Rate limited downloading ${vaultPath}, retrying in ${delay}ms (attempt ${attempt}/${MAX_RETRIES})`);
+					await this.sleep(delay);
+					continue;
+				}
+
+				this.logger.warn(`Failed to download cover image for ${vaultPath}:`, err);
+				return;
 			}
-		} catch (err: unknown) {
-			this.logger.warn(`Failed to download cover image for ${vaultPath}:`, err);
 		}
+	}
+
+	private sleep(ms: number): Promise<void> {
+		return new Promise((resolve) => setTimeout(resolve, ms));
 	}
 
 	private detectOrphans(repos: RepoData[], settings: GHProjectsSettings): void {

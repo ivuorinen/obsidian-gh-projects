@@ -38,7 +38,6 @@ export default class GHProjectsPlugin extends Plugin {
 	private syncManager!: SyncManager;
 	private syncIntervalId: number | null = null;
 	private statusBarEl: HTMLElement | null = null;
-	private lastSyncTime: Date | null = null;
 	private logger!: Logger;
 
 	async onload(): Promise<void> {
@@ -73,17 +72,11 @@ export default class GHProjectsPlugin extends Plugin {
 		this.addRibbonIcon("github", "Sync GitHub repos", () => this.runSync());
 
 		this.statusBarEl = this.addStatusBarItem();
-		this.updateStatusBar();
 
 		this.app.workspace.onLayoutReady(() => {
 			void this.runSync();
 			this.startSyncInterval();
 		});
-
-		// Update status bar every 60 seconds
-		this.registerInterval(
-			window.setInterval(() => this.updateStatusBar(), 60 * 1000)
-		);
 	}
 
 	onunload(): void {
@@ -125,40 +118,17 @@ export default class GHProjectsPlugin extends Plugin {
 	}
 
 	private async runSync(): Promise<void> {
-		this.updateStatusBar("syncing...");
-
+		this.updateStatusBar(true);
 		try {
 			await this.syncManager.run();
-			this.lastSyncTime = new Date();
 		} finally {
-			this.updateStatusBar();
+			this.updateStatusBar(false);
 		}
 	}
 
-	private updateStatusBar(override?: string): void {
+	private updateStatusBar(syncing = false): void {
 		if (!this.statusBarEl) return;
-
-		if (override) {
-			this.statusBarEl.setText(`GH: ${override}`);
-			return;
-		}
-
-		if (this.lastSyncTime) {
-			const ago = this.timeSince(this.lastSyncTime);
-			this.statusBarEl.setText(`GH: synced ${ago} ago`);
-		} else {
-			// eslint-disable-next-line obsidianmd/ui/sentence-case -- "GH" is an abbreviation
-			this.statusBarEl.setText("GH: not synced");
-		}
-	}
-
-	private timeSince(date: Date): string {
-		const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
-		if (seconds < 60) return `${seconds}s`;
-		const minutes = Math.floor(seconds / 60);
-		if (minutes < 60) return `${minutes}m`;
-		const hours = Math.floor(minutes / 60);
-		return `${hours}h`;
+		this.statusBarEl.setText(syncing ? "GH: syncing..." : "");
 	}
 
 	private openRepoSwitcher(): void {

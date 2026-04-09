@@ -574,4 +574,85 @@ describe("SyncManager.downloadCoverImage()", () => {
 		});
 		expect(imageCalls).toHaveLength(0);
 	});
+
+	it("retries on 429 then succeeds on second attempt", async () => {
+		const app = makeApp();
+		(app.vault.getFileByPath as ReturnType<typeof vi.fn>).mockReturnValue(null);
+		const fakeBuffer = new ArrayBuffer(8);
+		vi.mocked(requestUrl)
+			.mockRejectedValueOnce({ status: 429, headers: { "retry-after": "0" } })
+			.mockResolvedValueOnce({
+				arrayBuffer: fakeBuffer,
+				json: {},
+				headers: {},
+				status: 200,
+				text: "",
+			} as any);
+		const repo = makeRepo({
+			openGraphImageUrl: "https://opengraph.github.com/my-repo",
+			updatedAt: "2026-04-08T09:00:00Z",
+		});
+		vi.mocked(fetchRepos).mockResolvedValue([repo]);
+		const settings = {
+			...DEFAULT_SETTINGS,
+			githubUsername: "user",
+			outputFolder: "GitHub",
+			assetsFolder: "GitHub/assets",
+		};
+		const logger = makeLogger();
+		const manager = new SyncManager(app, () => settings, () => "mytoken", logger);
+		await manager.run();
+		expect(logger.debug).toHaveBeenCalledWith(expect.stringContaining("Rate limited"));
+		expect((app.vault.createBinary as ReturnType<typeof vi.fn>)).toHaveBeenCalled();
+	});
+
+	it("gives up after max retries on repeated 429", async () => {
+		const app = makeApp();
+		(app.vault.getFileByPath as ReturnType<typeof vi.fn>).mockReturnValue(null);
+		vi.mocked(requestUrl).mockRejectedValue({ status: 429, headers: { "retry-after": "0" } });
+		const repo = makeRepo({
+			openGraphImageUrl: "https://opengraph.github.com/my-repo",
+			updatedAt: "2026-04-08T09:00:00Z",
+		});
+		vi.mocked(fetchRepos).mockResolvedValue([repo]);
+		const settings = {
+			...DEFAULT_SETTINGS,
+			githubUsername: "user",
+			outputFolder: "GitHub",
+			assetsFolder: "GitHub/assets",
+		};
+		const logger = makeLogger();
+		const manager = new SyncManager(app, () => settings, () => "mytoken", logger);
+		await manager.run();
+		// Should have retried twice (attempts 1 and 2), then failed on attempt 3
+		expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("Failed to download"), expect.anything());
+		expect((app.vault.createBinary as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+	});
+
+	it("does not retry on non-429 errors", async () => {
+		const app = makeApp();
+		(app.vault.getFileByPath as ReturnType<typeof vi.fn>).mockReturnValue(null);
+		vi.mocked(requestUrl).mockRejectedValueOnce({ status: 500 });
+		const repo = makeRepo({
+			openGraphImageUrl: "https://opengraph.github.com/my-repo",
+			updatedAt: "2026-04-08T09:00:00Z",
+		});
+		vi.mocked(fetchRepos).mockResolvedValue([repo]);
+		const settings = {
+			...DEFAULT_SETTINGS,
+			githubUsername: "user",
+			outputFolder: "GitHub",
+			assetsFolder: "GitHub/assets",
+		};
+		const logger = makeLogger();
+		const manager = new SyncManager(app, () => settings, () => "mytoken", logger);
+		await manager.run();
+		expect(logger.warn).toHaveBeenCalled();
+		// requestUrl should only have been called once (no retry)
+		const imageCalls = vi.mocked(requestUrl).mock.calls.filter((c) => {
+			const arg = c[0];
+			return typeof arg === "object" && arg !== null && (arg as { url?: string }).url === "https://opengraph.github.com/my-repo";
+		});
+		expect(imageCalls).toHaveLength(1);
+	});
 });
