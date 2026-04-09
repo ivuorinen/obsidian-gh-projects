@@ -1,0 +1,74 @@
+name: Release Obsidian plugin
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - "**.md"
+      - ".github/workflows/**"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install gh-calver
+        run: gh extension install ivuorinen/gh-calver
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute next CalVer version
+        id: version
+        run: |
+          version=$(gh calver next)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Next version: $version"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update version in manifest and versions files
+        env:
+          NEXT_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          node -e "
+            const fs = require('fs');
+            const version = process.env.NEXT_VERSION;
+
+            const manifest = JSON.parse(fs.readFileSync('manifest.json', 'utf8'));
+            manifest.version = version;
+            fs.writeFileSync('manifest.json', JSON.stringify(manifest, null, '\t'));
+
+            const versions = JSON.parse(fs.readFileSync('versions.json', 'utf8'));
+            versions[version] = manifest.minAppVersion;
+            fs.writeFileSync('versions.json', JSON.stringify(versions, null, '\t'));
+
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            pkg.version = version;
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, '\t'));
+          "
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: ".nvmrc"
+          cache: "npm"
+
+      - name: Build plugin
+        run: |
+          npm install
+          npm run build
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEXT_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh calver release \
+            --title "$NEXT_VERSION" \
+            main.js manifest.json styles.css
