@@ -1,6 +1,7 @@
-import { describe, it, expect } from "vitest";
-import { substituteTemplateVars } from "../src/templater";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { substituteTemplateVars, getTemplaterPlugin, renderWithTemplater, renderBodyWithTemplate } from "../src/templater";
 import type { RepoData } from "../src/types";
+import type { App } from "obsidian";
 
 function makeRepo(overrides: Partial<RepoData> = {}): RepoData {
 	return {
@@ -144,5 +145,107 @@ describe("substituteTemplateVars", () => {
 		const template = "{{#issues}}{{issue.createdAt}}{{/issues}}";
 		const result = substituteTemplateVars(template, makeRepo());
 		expect(result).toBe("2026-04-01");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// getTemplaterPlugin
+// ---------------------------------------------------------------------------
+
+function makeApp(pluginReturnValue: unknown = null): App {
+	return {
+		vault: {
+			getFileByPath: vi.fn(() => null),
+			read: vi.fn(async () => ""),
+		},
+		plugins: {
+			getPlugin: vi.fn(() => pluginReturnValue),
+		},
+	} as unknown as App;
+}
+
+describe("getTemplaterPlugin", () => {
+	it("returns null when plugin is not installed", () => {
+		const app = makeApp(null);
+		expect(getTemplaterPlugin(app)).toBeNull();
+	});
+
+	it("returns the plugin object when it is installed", () => {
+		const fakePlugin = { id: "templater-obsidian" };
+		const app = makeApp(fakePlugin);
+		expect(getTemplaterPlugin(app)).toBe(fakePlugin);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// renderWithTemplater
+// ---------------------------------------------------------------------------
+
+describe("renderWithTemplater", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it("returns null when Templater plugin is not found", async () => {
+		const app = makeApp(null);
+		const result = await renderWithTemplater(app, "templates/repo.md", makeRepo());
+		expect(result).toBeNull();
+	});
+
+	it("returns null when template file is not found", async () => {
+		const fakePlugin = { id: "templater-obsidian" };
+		const app = makeApp(fakePlugin);
+		(app.vault.getFileByPath as ReturnType<typeof vi.fn>).mockReturnValue(null);
+		const result = await renderWithTemplater(app, "templates/missing.md", makeRepo());
+		expect(result).toBeNull();
+	});
+
+	it("returns substituted content when plugin and file both exist", async () => {
+		const fakePlugin = { id: "templater-obsidian" };
+		const app = makeApp(fakePlugin);
+		const fakeFile = { path: "templates/repo.md", basename: "repo" };
+		(app.vault.getFileByPath as ReturnType<typeof vi.fn>).mockReturnValue(fakeFile);
+		(app.vault.read as ReturnType<typeof vi.fn>).mockResolvedValue("# {{repo.name}}");
+		const result = await renderWithTemplater(app, "templates/repo.md", makeRepo());
+		expect(result).toBe("# my-project");
+	});
+
+	it("returns null when vault.read throws", async () => {
+		const fakePlugin = { id: "templater-obsidian" };
+		const app = makeApp(fakePlugin);
+		const fakeFile = { path: "templates/repo.md", basename: "repo" };
+		(app.vault.getFileByPath as ReturnType<typeof vi.fn>).mockReturnValue(fakeFile);
+		(app.vault.read as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("disk error"));
+		const result = await renderWithTemplater(app, "templates/repo.md", makeRepo());
+		expect(result).toBeNull();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// renderBodyWithTemplate
+// ---------------------------------------------------------------------------
+
+describe("renderBodyWithTemplate", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it("falls back to renderBody when renderWithTemplater returns null", async () => {
+		// No plugin → renderWithTemplater returns null
+		const app = makeApp(null);
+		const result = await renderBodyWithTemplate(app, "templates/repo.md", makeRepo());
+		// renderBody produces non-empty markdown
+		expect(typeof result).toBe("string");
+		expect(result.length).toBeGreaterThan(0);
+	});
+
+	it("returns templater output when available", async () => {
+		const fakePlugin = { id: "templater-obsidian" };
+		const app = makeApp(fakePlugin);
+		const fakeFile = { path: "templates/repo.md", basename: "repo" };
+		(app.vault.getFileByPath as ReturnType<typeof vi.fn>).mockReturnValue(fakeFile);
+		(app.vault.read as ReturnType<typeof vi.fn>).mockResolvedValue("custom: {{repo.name}}");
+		const result = await renderBodyWithTemplate(app, "templates/repo.md", makeRepo());
+		expect(result).toBe("custom: my-project");
 	});
 });

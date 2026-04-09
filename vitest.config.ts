@@ -10,5 +10,10 @@ export default defineConfig({
 	test: {
 		globals: true,
 		setupFiles: ["tests/setup.ts"],
+		coverage: {
+			provider: "v8",
+			include: ["src/**/*.ts"],
+			exclude: ["src/main.ts", "src/settings.ts"],
+		},
 	},
 });

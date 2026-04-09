@@ -1,7 +1,8 @@
-import { describe, it, expect } from "vitest";
-import { parseRepoNode, filterRepos } from "../src/github";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { parseRepoNode, filterRepos, fetchRepos, GitHubAuthError, GitHubRateLimitError } from "../src/github";
 import { DEFAULT_SETTINGS } from "../src/types";
 import type { GraphQLRepoNode, RepoData } from "../src/types";
+import { requestUrl } from "obsidian";
 
 function makeRepoNode(overrides: Partial<GraphQLRepoNode> = {}): GraphQLRepoNode {
 	return {
@@ -170,5 +171,203 @@ describe("filterRepos", () => {
 		const repos = [makeRepo({ name: "archived", isArchived: true })];
 		const result = filterRepos(repos, { ...DEFAULT_SETTINGS, includeArchived: true });
 		expect(result).toHaveLength(1);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Error classes
+// ---------------------------------------------------------------------------
+
+describe("GitHubAuthError", () => {
+	it("has correct name and message", () => {
+		const err = new GitHubAuthError();
+		expect(err).toBeInstanceOf(Error);
+		expect(err.name).toBe("GitHubAuthError");
+		expect(err.message).toContain("invalid or expired");
+	});
+});
+
+describe("GitHubRateLimitError", () => {
+	it("has correct name and exposes resetAt as a Date", () => {
+		const timestamp = 1700000000;
+		const err = new GitHubRateLimitError(timestamp);
+		expect(err).toBeInstanceOf(Error);
+		expect(err.name).toBe("GitHubRateLimitError");
+		expect(err.resetAt).toBeInstanceOf(Date);
+		expect(err.resetAt.getTime()).toBe(timestamp * 1000);
+	});
+
+	it("includes reset time in message", () => {
+		const err = new GitHubRateLimitError(1700000000);
+		expect(err.message).toContain("rate limit exceeded");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// fetchRepos
+// ---------------------------------------------------------------------------
+
+function makeGraphQLPage(repoName: string, hasNextPage: boolean, endCursor: string | null = null) {
+	return {
+		json: {
+			data: {
+				user: {
+					repositories: {
+						nodes: [
+							{
+								name: repoName,
+								description: null,
+								url: `https://github.com/user/${repoName}`,
+								isPrivate: false,
+								isFork: false,
+								isArchived: false,
+								primaryLanguage: null,
+								languages: { nodes: [] },
+								repositoryTopics: { nodes: [] },
+								licenseInfo: null,
+								stargazerCount: 0,
+								forkCount: 0,
+								watchers: { totalCount: 0 },
+								openGraphImageUrl: null,
+								pushedAt: "2026-01-01T00:00:00Z",
+								updatedAt: "2026-01-02T00:00:00Z",
+								issues: { totalCount: 0, nodes: [] },
+								pullRequests: { totalCount: 0, nodes: [] },
+							},
+						],
+						pageInfo: { hasNextPage, endCursor },
+					},
+				},
+			},
+		},
+		headers: {},
+	};
+}
+
+describe("fetchRepos", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it("returns repos from a single page response", async () => {
+		vi.mocked(requestUrl).mockResolvedValueOnce(makeGraphQLPage("my-repo", false));
+		const repos = await fetchRepos("token123", { ...DEFAULT_SETTINGS, githubUsername: "user" });
+		expect(repos).toHaveLength(1);
+		expect(repos[0].name).toBe("my-repo");
+	});
+
+	it("paginates across two pages", async () => {
+		vi.mocked(requestUrl)
+			.mockResolvedValueOnce(makeGraphQLPage("repo-a", true, "cursor1"))
+			.mockResolvedValueOnce(makeGraphQLPage("repo-b", false));
+		const repos = await fetchRepos("token123", { ...DEFAULT_SETTINGS, githubUsername: "user" });
+		expect(repos).toHaveLength(2);
+		expect(repos.map((r) => r.name)).toEqual(["repo-a", "repo-b"]);
+	});
+
+	it("throws GitHubAuthError on 401", async () => {
+		vi.mocked(requestUrl).mockRejectedValueOnce({ status: 401 });
+		await expect(fetchRepos("bad-token", { ...DEFAULT_SETTINGS, githubUsername: "user" }))
+			.rejects.toBeInstanceOf(GitHubAuthError);
+	});
+
+	it("throws GitHubRateLimitError on 403 with x-ratelimit-reset header", async () => {
+		vi.mocked(requestUrl).mockRejectedValueOnce({
+			status: 403,
+			headers: { "x-ratelimit-reset": "1700000000" },
+		});
+		await expect(fetchRepos("token123", { ...DEFAULT_SETTINGS, githubUsername: "user" }))
+			.rejects.toBeInstanceOf(GitHubRateLimitError);
+	});
+
+	it("throws GitHubRateLimitError on GraphQL rate limit error message", async () => {
+		vi.mocked(requestUrl).mockResolvedValueOnce({
+			json: {
+				errors: [{ message: "rate limit exceeded" }],
+				data: null,
+			},
+			headers: {},
+		});
+		await expect(fetchRepos("token123", { ...DEFAULT_SETTINGS, githubUsername: "user" }))
+			.rejects.toBeInstanceOf(GitHubRateLimitError);
+	});
+
+	it("throws generic Error on other GraphQL errors", async () => {
+		vi.mocked(requestUrl).mockResolvedValueOnce({
+			json: {
+				errors: [{ message: "something went wrong" }],
+				data: null,
+			},
+			headers: {},
+		});
+		await expect(fetchRepos("token123", { ...DEFAULT_SETTINGS, githubUsername: "user" }))
+			.rejects.toThrow("GitHub API error: something went wrong");
+	});
+
+	it("clears issues when issuesLimit=0", async () => {
+		vi.mocked(requestUrl).mockResolvedValueOnce({
+			json: {
+				data: {
+					user: {
+						repositories: {
+							nodes: [
+								{
+									name: "repo-x",
+									description: null,
+									url: "https://github.com/user/repo-x",
+									isPrivate: false,
+									isFork: false,
+									isArchived: false,
+									primaryLanguage: null,
+									languages: { nodes: [] },
+									repositoryTopics: { nodes: [] },
+									licenseInfo: null,
+									stargazerCount: 0,
+									forkCount: 0,
+									watchers: { totalCount: 0 },
+									openGraphImageUrl: null,
+									pushedAt: "2026-01-01T00:00:00Z",
+									updatedAt: "2026-01-02T00:00:00Z",
+									issues: {
+										totalCount: 2,
+										nodes: [
+											{
+												title: "Issue 1",
+												number: 1,
+												url: "https://github.com/user/repo-x/issues/1",
+												author: { login: "alice" },
+												labels: { nodes: [] },
+												createdAt: "2026-01-01T00:00:00Z",
+												updatedAt: "2026-01-01T00:00:00Z",
+											},
+										],
+									},
+									pullRequests: { totalCount: 0, nodes: [] },
+								},
+							],
+							pageInfo: { hasNextPage: false, endCursor: null },
+						},
+					},
+				},
+			},
+			headers: {},
+		});
+		const repos = await fetchRepos("token123", {
+			...DEFAULT_SETTINGS,
+			githubUsername: "user",
+			issuesLimit: 0,
+		});
+		expect(repos[0].issues).toHaveLength(0);
+	});
+
+	it("includes ORGANIZATION_MEMBER affiliation when includeOrgRepos=true", async () => {
+		vi.mocked(requestUrl).mockResolvedValueOnce(makeGraphQLPage("org-repo", false));
+		await fetchRepos("token123", {
+			...DEFAULT_SETTINGS,
+			githubUsername: "user",
+			includeOrgRepos: true,
+		});
+		const body = JSON.parse(vi.mocked(requestUrl).mock.calls[0][0].body as string);
+		expect(body.variables.affiliations).toContain("ORGANIZATION_MEMBER");
 	});
 });
