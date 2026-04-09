@@ -154,8 +154,9 @@ export async function fetchRepos(
 
 		const json: GraphQLResponse = response.json;
 
-		if (json.errors?.length) {
-			throw new Error(`GitHub API error: ${json.errors[0].message}`);
+		const firstError = json.errors?.[0];
+		if (firstError) {
+			throw new Error(`GitHub API error: ${firstError.message}`);
 		}
 
 		const { nodes, pageInfo } = json.data.user.repositories;
