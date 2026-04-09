@@ -5,7 +5,7 @@ function escapeYamlString(str: string): string {
 }
 
 function formatDate(isoDate: string): string {
-	return isoDate.split("T")[0];
+	return isoDate.split("T")[0] ?? isoDate;
 }
 
 function renderYamlList(items: string[], indent = 2): string {
