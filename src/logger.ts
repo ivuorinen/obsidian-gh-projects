@@ -38,7 +38,16 @@ export function createLogger(deps: LoggerDeps): Logger {
     if (isVerbose && !deps.getDebugMode()) return;
 
     const redacted = redactArgs(args, deps.getToken());
-    console[level](PREFIX, ...redacted);
+    if (level === "debug") {
+      console.debug(PREFIX, ...redacted);
+    } else if (level === "info") {
+      // eslint-disable-next-line no-console
+      console.info(PREFIX, ...redacted);
+    } else if (level === "warn") {
+      console.warn(PREFIX, ...redacted);
+    } else {
+      console.error(PREFIX, ...redacted);
+    }
   }
 
   return {
