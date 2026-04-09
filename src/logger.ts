@@ -20,8 +20,13 @@ function redactArg(arg: unknown, token: string): unknown {
   }
   if (arg instanceof Error) {
     const msg = arg.message.replaceAll(token, "[REDACTED]");
-    const stack = (arg.stack ?? "").replaceAll(token, "[REDACTED]");
-    return stack ? `${arg.name}: ${msg}\n${stack}` : `${arg.name}: ${msg}`;
+    const stack = arg.stack?.replaceAll(token, "[REDACTED]");
+    const redactedError = new Error(msg);
+    redactedError.name = arg.name;
+    if (stack) {
+      redactedError.stack = stack;
+    }
+    return redactedError;
   }
   if (typeof arg === "object" && arg !== null) {
     return JSON.stringify(arg).replaceAll(token, "[REDACTED]");

@@ -21,8 +21,9 @@ class ConfirmModal extends Modal {
 
 	onOpen(): void {
 		const { contentEl } = this;
+		contentEl.createEl("h2", { text: "Confirm reset" });
 		contentEl.createEl("p", {
-			text: "This will delete all Markdown files in your output folder and trigger a fresh sync. Cover images will be kept.",
+			text: "This will delete Markdown files in the root of your output folder and trigger a fresh sync. Subfolders and cover images will be kept.",
 		});
 		new Setting(contentEl)
 			.addButton((btn) =>
@@ -331,7 +332,7 @@ export class GHProjectsSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Reset and re-sync")
-			.setDesc("Delete all synced Markdown files and trigger a fresh sync. Cover images are kept.")
+			.setDesc("Delete synced Markdown files from the output folder root and trigger a fresh sync. Subfolders and cover images are kept.")
 			.addButton((button) =>
 				button
 					.setButtonText("Reset")

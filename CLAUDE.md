@@ -40,7 +40,7 @@ Obsidian plugin that syncs GitHub repositories into markdown files with YAML fro
 
 ### Data Flow
 
-```
+```text
 Plugin.runSync()
   → SyncManager.run()
     → fetchRepos() [github.ts] — GraphQL with cursor pagination

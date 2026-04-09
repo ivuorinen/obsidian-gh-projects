@@ -74,6 +74,56 @@ export class SyncManager {
 			return { synced: 0, skipped: 0, errors: 0 };
 		}
 
+		this.syncing = true;
+		try {
+			return await this.doSync();
+		} finally {
+			this.syncing = false;
+		}
+	}
+
+	async resetAndSync(): Promise<{ deleted: number; synced: number; skipped: number; errors: number }> {
+		if (this.syncing) {
+			new Notice("GitHub sync is already running.");
+			return { deleted: 0, synced: 0, skipped: 0, errors: 0 };
+		}
+
+		this.syncing = true;
+		try {
+			// Preflight: validate credentials before deleting anything
+			const token = this.getToken();
+			if (!token) {
+				new Notice("GitHub token not configured. Check plugin settings.");
+				return { deleted: 0, synced: 0, skipped: 0, errors: 0 };
+			}
+			const settings = this.getSettings();
+			if (!settings.githubUsername) {
+				new Notice("GitHub username not configured. Check plugin settings.");
+				return { deleted: 0, synced: 0, skipped: 0, errors: 0 };
+			}
+
+			// Delete root-level markdown files in output folder
+			const outputFolder = normalizePath(settings.outputFolder);
+			const filesToDelete = this.app.vault
+				.getMarkdownFiles()
+				.filter((f) => f.path.startsWith(outputFolder + "/") && !f.path.slice(outputFolder.length + 1).includes("/"));
+
+			let deleted = 0;
+			for (const file of filesToDelete) {
+				await this.app.fileManager.trashFile(file);
+				deleted++;
+			}
+
+			this.logger.info(`Reset: deleted ${deleted} file(s) from ${outputFolder}`);
+
+			const result = await this.doSync();
+			return { deleted, ...result };
+		} finally {
+			this.syncing = false;
+		}
+	}
+
+	private async doSync(): Promise<{ synced: number; skipped: number; errors: number }> {
 		const token = this.getToken();
 		if (!token) {
 			new Notice("GitHub token not configured. Check plugin settings.");
@@ -86,7 +136,6 @@ export class SyncManager {
 			return { synced: 0, skipped: 0, errors: 0 };
 		}
 
-		this.syncing = true;
 		let synced = 0;
 		let skipped = 0;
 		let errors = 0;
@@ -130,35 +179,9 @@ export class SyncManager {
 				new Notice(`GitHub sync failed: ${message}`);
 			}
 			this.logger.error("GitHub sync failed:", err);
-		} finally {
-			this.syncing = false;
 		}
 
 		return { synced, skipped, errors };
-	}
-
-	async resetAndSync(): Promise<{ deleted: number; synced: number; skipped: number; errors: number }> {
-		if (this.syncing) {
-			new Notice("GitHub sync is already running.");
-			return { deleted: 0, synced: 0, skipped: 0, errors: 0 };
-		}
-
-		const settings = this.getSettings();
-		const outputFolder = normalizePath(settings.outputFolder);
-		const filesToDelete = this.app.vault
-			.getMarkdownFiles()
-			.filter((f) => f.path.startsWith(outputFolder + "/") && !f.path.slice(outputFolder.length + 1).includes("/"));
-
-		let deleted = 0;
-		for (const file of filesToDelete) {
-			await this.app.fileManager.trashFile(file);
-			deleted++;
-		}
-
-		this.logger.info(`Reset: deleted ${deleted} file(s) from ${outputFolder}`);
-
-		const result = await this.run();
-		return { deleted, ...result };
 	}
 
 	private async syncRepo(repo: RepoData, settings: GHProjectsSettings): Promise<boolean> {
@@ -219,7 +242,7 @@ export class SyncManager {
 
 		this.logger.debug(`Downloading cover image: ${vaultPath}`);
 		const MAX_RETRIES = 3;
-		for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+		for (let retry = 0; retry <= MAX_RETRIES; retry++) {
 			try {
 				const response = await requestUrl({ url: imageUrl });
 				if (existingFile) {
@@ -229,10 +252,11 @@ export class SyncManager {
 				}
 				return;
 			} catch (err: unknown) {
-				if (isRequestUrlError(err) && err.status === 429 && attempt < MAX_RETRIES) {
-					const retryAfter = Number(err.headers["retry-after"]) || 0;
-					const delay = Math.max(retryAfter * 1000, 1000 * Math.pow(2, attempt - 1));
-					this.logger.debug(`Rate limited downloading ${vaultPath}, retrying in ${delay}ms (attempt ${attempt}/${MAX_RETRIES})`);
+				if (isRequestUrlError(err) && err.status === 429 && retry < MAX_RETRIES) {
+					const retryAfterHeader = err.headers?.["retry-after"];
+					const retryAfter = Number(retryAfterHeader) || 0;
+					const delay = Math.max(retryAfter * 1000, 1000 * Math.pow(2, retry));
+					this.logger.debug(`Rate limited downloading ${vaultPath}, retrying in ${delay}ms (retry ${retry + 1}/${MAX_RETRIES})`);
 					await this.sleep(delay);
 					continue;
 				}
@@ -268,6 +292,8 @@ export class SyncManager {
 
 		for (const file of this.app.vault.getMarkdownFiles()) {
 			if (!file.path.startsWith(outputFolder + "/")) continue;
+			const relativePath = file.path.slice(outputFolder.length + 1);
+			if (relativePath.includes("/")) continue;
 			const basename = file.basename;
 			if (!repoSlugs.has(basename)) {
 				orphans.push(basename);

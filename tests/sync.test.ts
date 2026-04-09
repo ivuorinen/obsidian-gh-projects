@@ -498,6 +498,8 @@ describe("SyncManager templatePath branch (line 131)", () => {
 describe("SyncManager.downloadCoverImage()", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		// Mock sleep to avoid real delays in retry tests
+		vi.spyOn(SyncManager.prototype as unknown as { sleep: () => Promise<void> }, "sleep").mockResolvedValue(undefined);
 	});
 
 	it("calls createBinary when image download succeeds and no existing image file", async () => {
@@ -652,6 +654,7 @@ describe("SyncManager.downloadCoverImage()", () => {
 		const manager = new SyncManager(app, () => settings, () => "mytoken", logger);
 		await manager.run();
 		expect(logger.debug).toHaveBeenCalledWith(expect.stringContaining("Rate limited"));
+		expect(logger.debug).toHaveBeenCalledWith(expect.stringContaining("retry 1/3"));
 		expect((app.vault.createBinary as ReturnType<typeof vi.fn>)).toHaveBeenCalled();
 	});
 
@@ -673,7 +676,7 @@ describe("SyncManager.downloadCoverImage()", () => {
 		const logger = makeLogger();
 		const manager = new SyncManager(app, () => settings, () => "mytoken", logger);
 		await manager.run();
-		// Should have retried twice (attempts 1 and 2), then failed on attempt 3
+		// Should have retried 3 times (retries 0-2), then failed on retry 3
 		expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("Failed to download"), expect.anything());
 		expect((app.vault.createBinary as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
 	});

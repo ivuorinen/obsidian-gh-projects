@@ -76,7 +76,7 @@ export function substituteTemplateVars(template: string, repo: RepoData): string
 
 	let result = template;
 	for (const [key, value] of Object.entries(replacements)) {
-		result = result.replaceAll(key, value);
+		result = result.replaceAll(key, () => value);
 	}
 
 	const issueBlockRegex = /\{\{#issues\}\}([\s\S]*?)\{\{\/issues\}\}/g;
