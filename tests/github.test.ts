@@ -370,4 +370,31 @@ describe("fetchRepos", () => {
 		const body = JSON.parse(vi.mocked(requestUrl).mock.calls[0][0].body as string);
 		expect(body.variables.affiliations).toContain("ORGANIZATION_MEMBER");
 	});
+
+	it("re-throws non-auth/rate-limit errors from requestUrl", async () => {
+		vi.mocked(requestUrl).mockRejectedValueOnce({ status: 500, message: "Server Error" });
+		await expect(fetchRepos("token", { ...DEFAULT_SETTINGS, githubUsername: "user" }))
+			.rejects.toEqual({ status: 500, message: "Server Error" });
+	});
+
+	it("clears pullRequests when prsLimit is 0", async () => {
+		vi.mocked(requestUrl).mockResolvedValueOnce({
+			json: {
+				data: {
+					user: {
+						repositories: {
+							nodes: [makeRepoNode()],
+							pageInfo: { hasNextPage: false, endCursor: null },
+						},
+					},
+				},
+			},
+			headers: {},
+			status: 200,
+			arrayBuffer: new ArrayBuffer(0),
+			text: "",
+		} as any);
+		const result = await fetchRepos("token", { ...DEFAULT_SETTINGS, githubUsername: "user", prsLimit: 0 });
+		expect(result[0].pullRequests).toEqual([]);
+	});
 });

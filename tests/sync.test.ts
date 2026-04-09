@@ -233,9 +233,127 @@ describe("SyncManager.ensureFolder()", () => {
 	});
 });
 
+describe("SyncManager vault.modify for existing files", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it("calls vault.modify (not vault.create) for an existing file with outdated synced_at", async () => {
+		const existingFile = { path: "GitHub/my-repo.md", basename: "my-repo", stat: { mtime: 0 } };
+		const app = makeApp();
+		// Return the existing file for the md path
+		(app.vault.getFileByPath as ReturnType<typeof vi.fn>).mockImplementation((p: string) => {
+			if (p.endsWith(".md")) return existingFile;
+			return null;
+		});
+		// Old synced_at so shouldUpdateRepo returns true
+		(app.vault.read as ReturnType<typeof vi.fn>).mockResolvedValue(
+			"---\nsynced_at: 2025-01-01T00:00:00Z\n---\n"
+		);
+		const repo = makeRepo({ updatedAt: "2026-04-08T09:00:00Z" });
+		vi.mocked(fetchRepos).mockResolvedValue([repo]);
+		const settings = { ...DEFAULT_SETTINGS, githubUsername: "user", outputFolder: "GitHub" };
+		const manager = new SyncManager(app, () => settings, () => "mytoken");
+		const result = await manager.run();
+		expect((app.vault.modify as ReturnType<typeof vi.fn>)).toHaveBeenCalled();
+		expect((app.vault.create as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+		expect(result.synced).toBe(1);
+	});
+});
+
 describe("SyncManager.downloadCoverImage()", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+	});
+
+	it("calls createBinary when image download succeeds and no existing image file", async () => {
+		const app = makeApp();
+		// No existing files at all
+		(app.vault.getFileByPath as ReturnType<typeof vi.fn>).mockReturnValue(null);
+		const fakeBuffer = new ArrayBuffer(8);
+		vi.mocked(requestUrl).mockResolvedValue({
+			arrayBuffer: fakeBuffer,
+			json: {},
+			headers: {},
+			status: 200,
+			text: "",
+		} as any);
+		const repo = makeRepo({
+			openGraphImageUrl: "https://opengraph.github.com/my-repo",
+			updatedAt: "2026-04-08T09:00:00Z",
+		});
+		vi.mocked(fetchRepos).mockResolvedValue([repo]);
+		const settings = {
+			...DEFAULT_SETTINGS,
+			githubUsername: "user",
+			outputFolder: "GitHub",
+			assetsFolder: "GitHub/assets",
+		};
+		const manager = new SyncManager(app, () => settings, () => "mytoken");
+		await manager.run();
+		expect((app.vault.createBinary as ReturnType<typeof vi.fn>)).toHaveBeenCalled();
+	});
+
+	it("calls modifyBinary when existing image file is older than repo update", async () => {
+		const olderMtime = new Date("2025-01-01T00:00:00Z").getTime();
+		const coverFile = {
+			path: "GitHub/assets/my-repo.png",
+			basename: "my-repo",
+			stat: { mtime: olderMtime },
+		};
+		const app = makeApp();
+		(app.vault.getFileByPath as ReturnType<typeof vi.fn>).mockImplementation((p: string) => {
+			if (p.endsWith(".png")) return coverFile;
+			return null;
+		});
+		const fakeBuffer = new ArrayBuffer(8);
+		vi.mocked(requestUrl).mockResolvedValue({
+			arrayBuffer: fakeBuffer,
+			json: {},
+			headers: {},
+			status: 200,
+			text: "",
+		} as any);
+		const repo = makeRepo({
+			openGraphImageUrl: "https://opengraph.github.com/my-repo",
+			updatedAt: "2026-04-08T09:00:00Z",
+		});
+		vi.mocked(fetchRepos).mockResolvedValue([repo]);
+		const settings = {
+			...DEFAULT_SETTINGS,
+			githubUsername: "user",
+			outputFolder: "GitHub",
+			assetsFolder: "GitHub/assets",
+		};
+		const manager = new SyncManager(app, () => settings, () => "mytoken");
+		await manager.run();
+		expect((app.vault.modifyBinary as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith(coverFile, fakeBuffer);
+	});
+
+	it("does not abort sync when image download throws (console.warn called)", async () => {
+		const app = makeApp();
+		(app.vault.getFileByPath as ReturnType<typeof vi.fn>).mockReturnValue(null);
+		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+		// First call (from fetchRepos mock setup) is fine; requestUrl for image throws
+		vi.mocked(requestUrl).mockRejectedValue(new Error("network error"));
+		const repo = makeRepo({
+			openGraphImageUrl: "https://opengraph.github.com/my-repo",
+			updatedAt: "2026-04-08T09:00:00Z",
+		});
+		vi.mocked(fetchRepos).mockResolvedValue([repo]);
+		const settings = {
+			...DEFAULT_SETTINGS,
+			githubUsername: "user",
+			outputFolder: "GitHub",
+			assetsFolder: "GitHub/assets",
+		};
+		const manager = new SyncManager(app, () => settings, () => "mytoken");
+		const result = await manager.run();
+		expect(warnSpy).toHaveBeenCalled();
+		// Sync still creates the markdown file
+		expect((app.vault.create as ReturnType<typeof vi.fn>)).toHaveBeenCalled();
+		expect(result.synced).toBe(1);
+		warnSpy.mockRestore();
 	});
 
 	it("skips download when existing file mtime is newer than repo update", async () => {
