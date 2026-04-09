@@ -1,0 +1,131 @@
+import { describe, it, expect } from "vitest";
+import { renderFrontmatter, renderBody, renderRepoFile } from "../src/markdown";
+import type { RepoData } from "../src/types";
+
+function makeRepo(overrides: Partial<RepoData> = {}): RepoData {
+	return {
+		name: "my-project",
+		description: "A cool project",
+		url: "https://github.com/user/my-project",
+		isPrivate: false,
+		isFork: false,
+		isArchived: false,
+		primaryLanguage: "TypeScript",
+		languages: ["TypeScript", "JavaScript"],
+		topics: ["cli", "tools"],
+		license: "MIT",
+		stars: 42,
+		forks: 5,
+		watchers: 10,
+		openGraphImageUrl: "https://opengraph.github.com/my-project",
+		pushedAt: "2026-04-07T14:00:00Z",
+		updatedAt: "2026-04-08T09:00:00Z",
+		issues: [
+			{
+				title: "Bug report",
+				number: 1,
+				url: "https://github.com/user/my-project/issues/1",
+				author: "alice",
+				labels: ["bug"],
+				createdAt: "2026-04-01T00:00:00Z",
+				updatedAt: "2026-04-02T00:00:00Z",
+			},
+		],
+		issuesCount: 3,
+		pullRequests: [
+			{
+				title: "Fix bug",
+				number: 2,
+				url: "https://github.com/user/my-project/pulls/2",
+				author: "bob",
+				labels: ["bug", "fix"],
+				createdAt: "2026-04-03T00:00:00Z",
+				updatedAt: "2026-04-04T00:00:00Z",
+				reviewDecision: "APPROVED",
+			},
+		],
+		pullRequestsCount: 1,
+		...overrides,
+	};
+}
+
+describe("renderFrontmatter", () => {
+	it("renders all fields in YAML frontmatter", () => {
+		const result = renderFrontmatter(makeRepo(), "GitHub/assets/my-project.png");
+
+		expect(result).toContain("---");
+		expect(result).toContain("name: my-project");
+		expect(result).toContain('description: "A cool project"');
+		expect(result).toContain("url: https://github.com/user/my-project");
+		expect(result).toContain("private: false");
+		expect(result).toContain("language: TypeScript");
+		expect(result).toContain("  - TypeScript");
+		expect(result).toContain("  - cli");
+		expect(result).toContain("license: MIT");
+		expect(result).toContain("stars: 42");
+		expect(result).toContain("forks: 5");
+		expect(result).toContain("watchers: 10");
+		expect(result).toContain("open_issues: 3");
+		expect(result).toContain("open_prs: 1");
+		expect(result).toContain("cover: GitHub/assets/my-project.png");
+		expect(result).toContain("synced_at:");
+	});
+
+	it("omits cover when no image path", () => {
+		const result = renderFrontmatter(makeRepo({ openGraphImageUrl: null }), null);
+		expect(result).not.toContain("cover:");
+	});
+
+	it("handles null description", () => {
+		const result = renderFrontmatter(makeRepo({ description: null }), null);
+		expect(result).toContain('description: ""');
+	});
+
+	it("escapes quotes in description", () => {
+		const result = renderFrontmatter(makeRepo({ description: 'A "quoted" project' }), null);
+		expect(result).toContain('description: "A \\"quoted\\" project"');
+	});
+});
+
+describe("renderBody", () => {
+	it("renders heading and description", () => {
+		const result = renderBody(makeRepo());
+		expect(result).toContain("# my-project");
+		expect(result).toContain("A cool project");
+	});
+
+	it("renders issues table", () => {
+		const result = renderBody(makeRepo());
+		expect(result).toContain("## Open Issues (3)");
+		expect(result).toContain("| # | Title | Author | Labels | Created |");
+		expect(result).toContain("[Bug report](https://github.com/user/my-project/issues/1)");
+		expect(result).toContain("@alice");
+		expect(result).toContain("`bug`");
+	});
+
+	it("renders PRs table with status", () => {
+		const result = renderBody(makeRepo());
+		expect(result).toContain("## Open Pull Requests (1)");
+		expect(result).toContain("| # | Title | Author | Labels | Status | Created |");
+		expect(result).toContain("[Fix bug](https://github.com/user/my-project/pulls/2)");
+		expect(result).toContain("APPROVED");
+	});
+
+	it("omits issues section when count is 0", () => {
+		const result = renderBody(makeRepo({ issues: [], issuesCount: 0 }));
+		expect(result).not.toContain("## Open Issues");
+	});
+
+	it("omits PRs section when count is 0", () => {
+		const result = renderBody(makeRepo({ pullRequests: [], pullRequestsCount: 0 }));
+		expect(result).not.toContain("## Open Pull Requests");
+	});
+});
+
+describe("renderRepoFile", () => {
+	it("combines frontmatter and body", () => {
+		const result = renderRepoFile(makeRepo(), "GitHub/assets/my-project.png");
+		expect(result).toMatch(/^---\n/);
+		expect(result).toContain("---\n\n# my-project");
+	});
+});
