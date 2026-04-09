@@ -1,6 +1,7 @@
 import { App, Notice } from "obsidian";
 import type { RepoData } from "./types";
 import { renderBody } from "./markdown";
+import type { Logger } from "./logger";
 
 interface ObsidianAppWithPlugins extends App {
   plugins?: {
@@ -18,7 +19,8 @@ export function getTemplaterPlugin(app: App): unknown {
 export async function renderWithTemplater(
 	app: App,
 	templatePath: string,
-	repo: RepoData
+	repo: RepoData,
+	logger: Logger
 ): Promise<string | null> {
 	const templater = getTemplaterPlugin(app);
 	if (!templater) {
@@ -46,7 +48,7 @@ export async function renderWithTemplater(
 		template = substituteTemplateVars(template, repo);
 		return template;
 	} catch (err: unknown) {
-		console.error(`Templater rendering failed for ${repo.name}:`, err);
+		logger.error(`Templater rendering failed for ${repo.name}:`, err);
 		return null;
 	}
 }
@@ -113,9 +115,10 @@ export function substituteTemplateVars(template: string, repo: RepoData): string
 export function renderBodyWithTemplate(
 	app: App,
 	templatePath: string,
-	repo: RepoData
+	repo: RepoData,
+	logger: Logger
 ): Promise<string> {
-	return renderWithTemplater(app, templatePath, repo).then(
+	return renderWithTemplater(app, templatePath, repo, logger).then(
 		(result) => result ?? renderBody(repo)
 	);
 }

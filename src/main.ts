@@ -5,6 +5,8 @@ import { SyncManager } from "./sync";
 import { DEFAULT_SETTINGS } from "./types";
 import type { GHProjectsSettings } from "./types";
 import { settingsSchema } from "./schemas";
+import { createLogger } from "./logger";
+import type { Logger } from "./logger";
 
 class RepoSuggestModal extends SuggestModal<TFile> {
 	private files: TFile[];
@@ -37,14 +39,21 @@ export default class GHProjectsPlugin extends Plugin {
 	private syncIntervalId: number | null = null;
 	private statusBarEl: HTMLElement | null = null;
 	private lastSyncTime: Date | null = null;
+	private logger!: Logger;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
 
+		this.logger = createLogger({
+			getDebugMode: () => this.settings.debugMode,
+			getToken: () => this.getToken(),
+		});
+
 		this.syncManager = new SyncManager(
 			this.app,
 			() => this.settings,
-			() => this.getToken()
+			() => this.getToken(),
+			this.logger
 		);
 
 		this.addSettingTab(new GHProjectsSettingTab(this.app, this));

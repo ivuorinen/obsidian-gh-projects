@@ -4,6 +4,7 @@ import type { GHProjectsSettings, RepoData } from "./types";
 import { fetchRepos, GitHubAuthError, GitHubRateLimitError } from "./github";
 import { renderBody, renderFrontmatter } from "./markdown";
 import { renderBodyWithTemplate } from "./templater";
+import type { Logger } from "./logger";
 
 export function shouldUpdateRepo(
 	repoUpdatedAt: string,
@@ -31,7 +32,8 @@ export class SyncManager {
 	constructor(
 		private app: App,
 		private getSettings: () => GHProjectsSettings,
-		private getToken: () => string | null
+		private getToken: () => string | null,
+		private logger: Logger
 	) {}
 
 	get isSyncing(): boolean {
@@ -62,7 +64,9 @@ export class SyncManager {
 		let errors = 0;
 
 		try {
+			this.logger.debug(`Starting sync for user: ${settings.githubUsername}`);
 			const repos = await fetchRepos(token, settings);
+			this.logger.debug(`Fetched ${repos.length} repositories`);
 
 			await this.ensureFolder(settings.outputFolder);
 			if (repos.some((r) => r.openGraphImageUrl)) {
@@ -78,11 +82,12 @@ export class SyncManager {
 						skipped++;
 					}
 				} catch (err: unknown) {
-					console.error(`Failed to sync repo ${repo.name}:`, err);
+					this.logger.error(`Failed to sync repo ${repo.name}:`, err);
 					errors++;
 				}
 			}
 
+			this.logger.debug(`Sync results: ${synced} synced, ${skipped} skipped, ${errors} errors`);
 			this.detectOrphans(repos, settings);
 
 			new Notice(`GitHub sync complete: ${synced} updated, ${skipped} unchanged.`);
@@ -95,7 +100,7 @@ export class SyncManager {
 				const message = err instanceof Error ? err.message : "Unknown error";
 				new Notice(`GitHub sync failed: ${message}`);
 			}
-			console.error("GitHub sync failed:", err);
+			this.logger.error("GitHub sync failed:", err);
 		} finally {
 			this.syncing = false;
 		}
@@ -123,7 +128,7 @@ export class SyncManager {
 
 		let body: string;
 		if (settings.templatePath) {
-			body = await renderBodyWithTemplate(this.app, settings.templatePath, repo);
+			body = await renderBodyWithTemplate(this.app, settings.templatePath, repo, this.logger);
 		} else {
 			body = renderBody(repo);
 		}
@@ -158,7 +163,7 @@ export class SyncManager {
 				await this.app.vault.createBinary(normalizedPath, response.arrayBuffer);
 			}
 		} catch (err: unknown) {
-			console.warn(`Failed to download cover image for ${vaultPath}:`, err);
+			this.logger.warn(`Failed to download cover image for ${vaultPath}:`, err);
 		}
 	}
 
