@@ -56,9 +56,13 @@ export async function renderWithTemplater(
 export function substituteTemplateVars(template: string, repo: RepoData): string {
 	const replacements: Record<string, string> = {
 		"{{repo.name}}": repo.name,
+		"{{repo.owner}}": repo.owner,
+		"{{repo.fullName}}": repo.fullName,
 		"{{repo.description}}": repo.description ?? "",
 		"{{repo.url}}": repo.url,
 		"{{repo.language}}": repo.primaryLanguage ?? "",
+		"{{repo.languages}}": repo.languages.join(", "),
+		"{{repo.topics}}": repo.topics.join(", "),
 		"{{repo.stars}}": String(repo.stars),
 		"{{repo.forks}}": String(repo.forks),
 		"{{repo.watchers}}": String(repo.watchers),
@@ -72,11 +76,8 @@ export function substituteTemplateVars(template: string, repo: RepoData): string
 
 	let result = template;
 	for (const [key, value] of Object.entries(replacements)) {
-		result = result.split(key).join(value);
+		result = result.replaceAll(key, value);
 	}
-
-	result = result.split("{{repo.languages}}").join(repo.languages.join(", "));
-	result = result.split("{{repo.topics}}").join(repo.topics.join(", "));
 
 	const issueBlockRegex = /\{\{#issues\}\}([\s\S]*?)\{\{\/issues\}\}/g;
 	result = result.replace(issueBlockRegex, (_match, block: string) => {
