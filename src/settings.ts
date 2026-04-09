@@ -5,7 +5,6 @@ import {
 	AbstractInputSuggest,
 	TFolder,
 	TFile,
-	normalizePath,
 	SecretComponent,
 } from "obsidian";
 import type GHProjectsPlugin from "./main";
