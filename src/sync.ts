@@ -2,7 +2,8 @@ import { normalizePath, requestUrl, Notice } from "obsidian";
 import type { App } from "obsidian";
 import type { GHProjectsSettings, RepoData } from "./types";
 import { fetchRepos } from "./github";
-import { renderRepoFile } from "./markdown";
+import { renderBody, renderFrontmatter } from "./markdown";
+import { renderBodyWithTemplate } from "./templater";
 
 export function shouldUpdateRepo(
 	repoUpdatedAt: string,
@@ -112,7 +113,14 @@ export class SyncManager {
 			await this.downloadCoverImage(repo.openGraphImageUrl, coverPath);
 		}
 
-		const fileContent = renderRepoFile(repo, coverPath);
+		let body: string;
+		if (settings.templatePath) {
+			body = await renderBodyWithTemplate(this.app, settings.templatePath, repo);
+		} else {
+			body = renderBody(repo);
+		}
+		const frontmatter = renderFrontmatter(repo, coverPath);
+		const fileContent = `${frontmatter}\n\n${body}\n`;
 
 		if (existingFile) {
 			await this.app.vault.modify(existingFile, fileContent);
