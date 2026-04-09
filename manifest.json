@@ -1,0 +1,10 @@
+{
+	"id": "obsidian-gh-projects",
+	"name": "GitHub Projects",
+	"version": "0.1.0",
+	"minAppVersion": "1.8.0",
+	"description": "Sync GitHub repositories into markdown files with Bases card view support.",
+	"author": "Ismo Vuorinen",
+	"authorUrl": "https://github.com/ivuorinen",
+	"isDesktopOnly": false
+}
