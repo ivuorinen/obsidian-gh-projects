@@ -194,6 +194,10 @@ export async function fetchRepos(
             throw new GitHubRateLimitError(Number(resetHeader));
           }
         }
+        const hint = err.status >= 500
+          ? "GitHub may be experiencing issues — try again later."
+          : "Check plugin settings.";
+        throw new Error(`GitHub API error (HTTP ${err.status}). ${hint}`);
       }
       throw err;
     }

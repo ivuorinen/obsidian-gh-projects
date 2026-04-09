@@ -372,10 +372,10 @@ describe("fetchRepos", () => {
 		expect(body.variables.affiliations).toContain("ORGANIZATION_MEMBER");
 	});
 
-	it("re-throws non-auth/rate-limit errors from requestUrl", async () => {
+	it("wraps HTTP errors with descriptive message", async () => {
 		vi.mocked(requestUrl).mockRejectedValueOnce({ status: 500, message: "Server Error" });
 		await expect(fetchRepos("token", { ...DEFAULT_SETTINGS, githubUsername: "user" }))
-			.rejects.toEqual({ status: 500, message: "Server Error" });
+			.rejects.toThrow("GitHub API error (HTTP 500). GitHub may be experiencing issues — try again later.");
 	});
 
 	it("clears pullRequests when prsLimit is 0", async () => {
