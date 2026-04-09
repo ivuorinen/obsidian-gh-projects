@@ -12,6 +12,23 @@ import type {
 
 const GITHUB_GRAPHQL_URL = "https://api.github.com/graphql";
 
+export class GitHubAuthError extends Error {
+	constructor() {
+		super("GitHub token is invalid or expired. Check plugin settings.");
+		this.name = "GitHubAuthError";
+	}
+}
+
+export class GitHubRateLimitError extends Error {
+	resetAt: Date;
+	constructor(resetTimestamp: number) {
+		const resetAt = new Date(resetTimestamp * 1000);
+		super(`GitHub rate limit exceeded. Resets at ${resetAt.toLocaleTimeString()}.`);
+		this.name = "GitHubRateLimitError";
+		this.resetAt = resetAt;
+	}
+}
+
 const REPOS_QUERY = `
 query($username: String!, $first: Int!, $issuesFirst: Int!, $prsFirst: Int!, $after: String, $affiliations: [RepositoryAffiliation!]!) {
   user(login: $username) {
@@ -142,20 +159,40 @@ export async function fetchRepos(
 			affiliations,
 		};
 
-		const response = await requestUrl({
-			url: GITHUB_GRAPHQL_URL,
-			method: "POST",
-			headers: {
-				Authorization: `bearer ${token}`,
-				"Content-Type": "application/json",
-			},
-			body: JSON.stringify({ query: REPOS_QUERY, variables }),
-		});
+		let response;
+		try {
+			response = await requestUrl({
+				url: GITHUB_GRAPHQL_URL,
+				method: "POST",
+				headers: {
+					Authorization: `bearer ${token}`,
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({ query: REPOS_QUERY, variables }),
+			});
+		} catch (err: unknown) {
+			const reqErr = err as { status?: number; headers?: Record<string, string> };
+			if (reqErr.status === 401) {
+				throw new GitHubAuthError();
+			}
+			if (reqErr.status === 403) {
+				const resetHeader = reqErr.headers?.["x-ratelimit-reset"];
+				if (resetHeader) {
+					throw new GitHubRateLimitError(Number(resetHeader));
+				}
+			}
+			throw err;
+		}
 
 		const json: GraphQLResponse = response.json;
 
 		const firstError = json.errors?.[0];
 		if (firstError) {
+			if (firstError.message.toLowerCase().includes("rate limit")) {
+				const resetHeader = response.headers?.["x-ratelimit-reset"];
+				const resetTime = resetHeader ? Number(resetHeader) : Math.floor(Date.now() / 1000) + 3600;
+				throw new GitHubRateLimitError(resetTime);
+			}
 			throw new Error(`GitHub API error: ${firstError.message}`);
 		}
 

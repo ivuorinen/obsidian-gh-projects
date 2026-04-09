@@ -1,7 +1,7 @@
 import { normalizePath, requestUrl, Notice } from "obsidian";
 import type { App } from "obsidian";
 import type { GHProjectsSettings, RepoData } from "./types";
-import { fetchRepos } from "./github";
+import { fetchRepos, GitHubAuthError, GitHubRateLimitError } from "./github";
 import { renderBody, renderFrontmatter } from "./markdown";
 import { renderBodyWithTemplate } from "./templater";
 
@@ -83,10 +83,18 @@ export class SyncManager {
 				}
 			}
 
+			this.detectOrphans(repos, settings);
+
 			new Notice(`GitHub sync complete: ${synced} updated, ${skipped} unchanged.`);
 		} catch (err) {
-			const message = err instanceof Error ? err.message : "Unknown error";
-			new Notice(`GitHub sync failed: ${message}`);
+			if (err instanceof GitHubAuthError) {
+				new Notice("GitHub token is invalid or expired. Check plugin settings.");
+			} else if (err instanceof GitHubRateLimitError) {
+				new Notice(err.message);
+			} else {
+				const message = err instanceof Error ? err.message : "Unknown error";
+				new Notice(`GitHub sync failed: ${message}`);
+			}
 			console.error("GitHub sync failed:", err);
 		} finally {
 			this.syncing = false;
@@ -110,7 +118,7 @@ export class SyncManager {
 		let coverPath: string | null = null;
 		if (repo.openGraphImageUrl) {
 			coverPath = buildCoverPath(settings.assetsFolder, repo.name);
-			await this.downloadCoverImage(repo.openGraphImageUrl, coverPath);
+			await this.downloadCoverImage(repo.openGraphImageUrl, coverPath, repo.updatedAt);
 		}
 
 		let body: string;
@@ -131,16 +139,46 @@ export class SyncManager {
 		return true;
 	}
 
-	private async downloadCoverImage(imageUrl: string, vaultPath: string): Promise<void> {
+	private async downloadCoverImage(imageUrl: string, vaultPath: string, repoUpdatedAt: string): Promise<void> {
 		const normalizedPath = normalizePath(vaultPath);
 		const existingFile = this.app.vault.getFileByPath(normalizedPath);
-		if (existingFile) return;
+
+		if (existingFile) {
+			const repoTime = new Date(repoUpdatedAt).getTime();
+			if (existingFile.stat.mtime >= repoTime) {
+				return;
+			}
+		}
 
 		try {
 			const response = await requestUrl({ url: imageUrl });
-			await this.app.vault.createBinary(normalizedPath, response.arrayBuffer);
+			if (existingFile) {
+				await this.app.vault.modifyBinary(existingFile, response.arrayBuffer);
+			} else {
+				await this.app.vault.createBinary(normalizedPath, response.arrayBuffer);
+			}
 		} catch (err) {
 			console.warn(`Failed to download cover image for ${vaultPath}:`, err);
+		}
+	}
+
+	private detectOrphans(repos: RepoData[], settings: GHProjectsSettings): void {
+		const outputFolder = normalizePath(settings.outputFolder);
+		const repoNames = new Set(repos.map((r) => r.name));
+		const orphans: string[] = [];
+
+		for (const file of this.app.vault.getMarkdownFiles()) {
+			if (!file.path.startsWith(outputFolder + "/")) continue;
+			const basename = file.basename;
+			if (!repoNames.has(basename)) {
+				orphans.push(basename);
+			}
+		}
+
+		if (orphans.length > 0) {
+			new Notice(
+				`GitHub sync: ${orphans.length} file(s) no longer match filters: ${orphans.slice(0, 3).join(", ")}${orphans.length > 3 ? "..." : ""}`
+			);
 		}
 	}
 
