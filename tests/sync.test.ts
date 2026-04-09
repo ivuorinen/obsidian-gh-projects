@@ -59,7 +59,7 @@ function makeRepo(overrides: Partial<RepoData> = {}): RepoData {
 		stars: 0,
 		forks: 0,
 		watchers: 0,
-		openGraphImageUrl: null,
+		openGraphImageUrl: "",
 		pushedAt: "2026-01-01T00:00:00Z",
 		updatedAt: "2026-01-02T00:00:00Z",
 		issues: [],

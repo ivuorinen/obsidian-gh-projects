@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { parseRepoNode, filterRepos, fetchRepos, GitHubAuthError, GitHubRateLimitError } from "../src/github";
 import { DEFAULT_SETTINGS } from "../src/types";
-import type { GraphQLRepoNode, RepoData } from "../src/types";
+import type { RepoData } from "../src/types";
+import type { GraphQLRepoNode } from "../src/schemas";
 import { requestUrl } from "obsidian";
 
 function makeRepoNode(overrides: Partial<GraphQLRepoNode> = {}): GraphQLRepoNode {
@@ -70,8 +71,8 @@ function makeRepo(overrides: Partial<RepoData> = {}): RepoData {
 		stars: 0,
 		forks: 0,
 		watchers: 0,
-		openGraphImageUrl: null,
-		pushedAt: "",
+		openGraphImageUrl: "",
+		pushedAt: null,
 		updatedAt: "",
 		issues: [],
 		issuesCount: 0,
@@ -228,7 +229,7 @@ function makeGraphQLPage(repoName: string, hasNextPage: boolean, endCursor: stri
 								stargazerCount: 0,
 								forkCount: 0,
 								watchers: { totalCount: 0 },
-								openGraphImageUrl: null,
+								openGraphImageUrl: "https://opengraph.github.com/default",
 								pushedAt: "2026-01-01T00:00:00Z",
 								updatedAt: "2026-01-02T00:00:00Z",
 								issues: { totalCount: 0, nodes: [] },
@@ -325,7 +326,7 @@ describe("fetchRepos", () => {
 									stargazerCount: 0,
 									forkCount: 0,
 									watchers: { totalCount: 0 },
-									openGraphImageUrl: null,
+									openGraphImageUrl: "https://opengraph.github.com/repo-x",
 									pushedAt: "2026-01-01T00:00:00Z",
 									updatedAt: "2026-01-02T00:00:00Z",
 									issues: {
@@ -393,7 +394,7 @@ describe("fetchRepos", () => {
 			status: 200,
 			arrayBuffer: new ArrayBuffer(0),
 			text: "",
-		} as any);
+		});
 		const result = await fetchRepos("token", { ...DEFAULT_SETTINGS, githubUsername: "user", prsLimit: 0 });
 		expect(result[0].pullRequests).toEqual([]);
 	});
