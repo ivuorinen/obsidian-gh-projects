@@ -16,7 +16,7 @@ An Obsidian plugin that periodically fetches the authenticated user's GitHub rep
 | Repo filters | Owned, non-fork, non-archived by default (configurable) |
 | Cover images | Downloaded to vault in a configurable assets folder |
 | Token storage | Obsidian SecretStorage API |
-| Template support | Optional Templater integration for body customization |
+| Template support | Built-in `{{mustache}}` template engine; Templater presence detected but not required |
 | Architecture | Modular with clear boundaries |
 
 ---
@@ -228,17 +228,17 @@ A tool for doing cool things
    - If changed: re-render frontmatter + body, write via `vault.modify()` or `vault.create()`
 4. **Cover images** — for each repo with `openGraphImageUrl`:
    - Check if image exists at `{assetsFolder}/{repo-name}.png`
-   - Download via `requestUrl()` only if missing or repo's `updatedAt` is newer
+   - Download via `requestUrl()` only if missing, or if repo's `updatedAt` is newer than the existing file's modification time
    - Save via `vault.createBinary()` or `vault.modifyBinary()`
-5. **Cleanup** — orphaned files (repos no longer matching filters) are left in place, not deleted. A `Notice` informs the user of orphaned files.
+5. **Cleanup** — after sync completes, orphan files (repo files no longer matching filters) are detected. A `Notice` informs the user, listing up to 3 orphan file names. Files are not deleted automatically.
 6. **Status** — update status bar, show `Notice` on completion or error
 
 ### Error handling
 
+- **`GitHubAuthError`** (401 response): show `Notice` pointing to settings
+- **`GitHubRateLimitError`** (403 with `x-ratelimit-reset` header, or GraphQL rate limit error): show `Notice` with the reset time
 - **Network errors:** show `Notice`, retry on next interval
-- **Rate limit:** parse `x-ratelimit-reset`, show `Notice` with wait time
 - **Partial failure** (e.g., image download): sync markdown anyway, log warning
-- **Invalid token:** show `Notice` pointing to settings
 
 ### Concurrency
 
@@ -286,23 +286,23 @@ this.app.workspace.onLayoutReady(() => {
 
 ---
 
-## Templater Integration
+## Template System
 
 ### Detection
 
-Check if Templater is enabled via `this.app.plugins.getPlugin('templater-obsidian')`. No hard dependency.
+Check if Templater is enabled via `this.app.plugins.getPlugin('templater-obsidian')`. No hard dependency — Templater's presence is detected but its rendering engine is never invoked.
 
 ### How it works
 
 - User sets a template path in settings (e.g., `Templates/github-repo.md`)
 - Plugin always generates frontmatter itself (consistent data for Bases)
-- For body: if Templater is available and configured, read template file and pass `RepoData` as context. Otherwise, use default renderer from `markdown.ts`
-- Template receives full `RepoData` object for complete body control
+- For body: if a template path is configured, the plugin reads the template file directly and performs variable substitution using a built-in engine. Otherwise, the default renderer from `markdown.ts` is used
+- Templates use `{{mustache}}` variable syntax and `{{#block}}...{{/block}}` iteration blocks
+- Templates work even without Templater installed, as long as a template file path is specified
 
 ### Fallback behavior
 
 - Template file doesn't exist → default renderer, one-time `Notice`
-- Templater not installed → default renderer, one-time `Notice`
 - Template rendering error → default renderer for that repo, log error
 
 ### Why frontmatter is always plugin-controlled

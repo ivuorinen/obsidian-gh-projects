@@ -741,6 +741,20 @@ import type {
 
 const GITHUB_GRAPHQL_URL = "https://api.github.com/graphql";
 
+export class GitHubAuthError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "GitHubAuthError";
+  }
+}
+
+export class GitHubRateLimitError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "GitHubRateLimitError";
+  }
+}
+
 const REPOS_QUERY = `
 query($username: String!, $first: Int!, $issuesFirst: Int!, $prsFirst: Int!, $after: String, $affiliations: [RepositoryAffiliation!]!) {
   user(login: $username) {
@@ -871,20 +885,30 @@ export async function fetchRepos(
       affiliations,
     };
 
-    const response = await requestUrl({
-      url: GITHUB_GRAPHQL_URL,
-      method: "POST",
-      headers: {
-        Authorization: `bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ query: REPOS_QUERY, variables }),
-    });
+    let response;
+    try {
+      response = await requestUrl({
+        url: GITHUB_GRAPHQL_URL,
+        method: "POST",
+        headers: {
+          Authorization: `bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ query: REPOS_QUERY, variables }),
+      });
+    } catch (err: unknown) {
+      const status = (err as { status?: number }).status;
+      if (status === 401) throw new GitHubAuthError("Invalid or expired GitHub token.");
+      if (status === 403) throw new GitHubRateLimitError("GitHub API rate limit exceeded.");
+      throw err;
+    }
 
     const json: GraphQLResponse = response.json;
 
     if (json.errors?.length) {
-      throw new Error(`GitHub API error: ${json.errors[0].message}`);
+      const msg = json.errors[0].message;
+      if (msg.toLowerCase().includes("rate limit")) throw new GitHubRateLimitError(msg);
+      throw new Error(`GitHub API error: ${msg}`);
     }
 
     const { nodes, pageInfo } = json.data.user.repositories;
@@ -1339,7 +1363,7 @@ Create `src/sync.ts`:
 import { normalizePath, requestUrl, Notice, TFile } from "obsidian";
 import type { App } from "obsidian";
 import type { GHProjectsSettings, RepoData } from "./types";
-import { fetchRepos } from "./github";
+import { fetchRepos, GitHubAuthError, GitHubRateLimitError } from "./github";
 import { renderRepoFile } from "./markdown";
 
 export function shouldUpdateRepo(
@@ -1418,10 +1442,17 @@ export class SyncManager {
         }
       }
 
+      await this.detectOrphans(repos, settings);
       new Notice(`GitHub sync complete: ${synced} updated, ${skipped} unchanged.`);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Unknown error";
-      new Notice(`GitHub sync failed: ${message}`);
+      if (err instanceof GitHubAuthError) {
+        new Notice("GitHub sync failed: Invalid or expired token. Check plugin settings.");
+      } else if (err instanceof GitHubRateLimitError) {
+        new Notice("GitHub sync failed: API rate limit exceeded. Try again later.");
+      } else {
+        const message = err instanceof Error ? err.message : "Unknown error";
+        new Notice(`GitHub sync failed: ${message}`);
+      }
       console.error("GitHub sync failed:", err);
     } finally {
       this.syncing = false;
@@ -1445,7 +1476,7 @@ export class SyncManager {
     let coverPath: string | null = null;
     if (repo.openGraphImageUrl) {
       coverPath = buildCoverPath(settings.assetsFolder, repo.name);
-      await this.downloadCoverImage(repo.openGraphImageUrl, coverPath);
+      await this.downloadCoverImage(repo.openGraphImageUrl, coverPath, repo.updatedAt);
     }
 
     const fileContent = renderRepoFile(repo, coverPath);
@@ -1459,10 +1490,17 @@ export class SyncManager {
     return true;
   }
 
-  private async downloadCoverImage(imageUrl: string, vaultPath: string): Promise<void> {
+  private async downloadCoverImage(
+    imageUrl: string,
+    vaultPath: string,
+    repoUpdatedAt: string
+  ): Promise<void> {
     const normalizedPath = normalizePath(vaultPath);
     const existingFile = this.app.vault.getFileByPath(normalizedPath);
-    if (existingFile) return;
+    if (existingFile) {
+      const repoUpdatedMs = new Date(repoUpdatedAt).getTime();
+      if (existingFile.stat.mtime >= repoUpdatedMs) return;
+    }
 
     try {
       const response = await requestUrl({ url: imageUrl });
@@ -1473,6 +1511,33 @@ export class SyncManager {
       }
     } catch (err) {
       console.warn(`Failed to download cover image for ${vaultPath}:`, err);
+    }
+  }
+
+  private async detectOrphans(
+    syncedRepos: RepoData[],
+    settings: GHProjectsSettings
+  ): Promise<void> {
+    const folder = this.app.vault.getFolderByPath(normalizePath(settings.outputFolder));
+    if (!folder) return;
+
+    const syncedNames = new Set(syncedRepos.map((r) => r.name));
+    const orphans: string[] = [];
+
+    for (const child of folder.children) {
+      if (!(child instanceof TFile)) continue;
+      if (child.extension !== "md") continue;
+      const baseName = child.basename;
+      if (!syncedNames.has(baseName)) {
+        orphans.push(child.path);
+      }
+    }
+
+    if (orphans.length > 0) {
+      new Notice(
+        `GitHub Sync: ${orphans.length} file(s) in ${settings.outputFolder} no longer match any synced repo. Review manually.`
+      );
+      console.info("GitHub Sync orphaned files:", orphans);
     }
   }
 
@@ -1771,7 +1836,9 @@ output/assets, file picker for template, and all filter/limit dropdowns."
 
 ---
 
-## Task 7: Templater Integration
+## Task 7: Built-in Template Engine
+
+**Note:** The implementation uses a built-in `{{mustache}}`-style template engine rather than invoking the Templater plugin's API. The presence of Templater is checked (to warn the user if not installed when a template path is configured), but its API is not called — all template processing is done by the plugin's own `substituteTemplateVars` function.
 
 **Files:**
 - Create: `src/templater.ts`
@@ -1783,20 +1850,9 @@ import { App, Notice } from "obsidian";
 import type { RepoData } from "./types";
 import { renderBody } from "./markdown";
 
-interface TemplaterPlugin {
-  templater: {
-    create_running_config: (
-      templateFile: unknown,
-      targetFile: unknown,
-      runMode: number
-    ) => unknown;
-    read_and_parse_template: (config: unknown) => Promise<string>;
-  };
-}
-
 let templateWarningShown = false;
 
-export function getTemplaterPlugin(app: App): TemplaterPlugin | null {
+export function getTemplaterPlugin(app: App): unknown | null {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const plugin = (app as any).plugins?.getPlugin?.("templater-obsidian");
   return plugin ?? null;
@@ -1807,15 +1863,16 @@ export async function renderWithTemplater(
   templatePath: string,
   repo: RepoData
 ): Promise<string | null> {
+  // Check Templater presence only to warn — its API is NOT invoked.
+  // All template processing uses the plugin's own substituteTemplateVars engine.
   const templater = getTemplaterPlugin(app);
   if (!templater) {
     if (!templateWarningShown) {
       new Notice(
-        "Templater plugin not found. Using default renderer. Install Templater for custom templates."
+        "Templater plugin not found. Using built-in template engine with {{mustache}} syntax."
       );
       templateWarningShown = true;
     }
-    return null;
   }
 
   const templateFile = app.vault.getFileByPath(templatePath);
@@ -1828,15 +1885,11 @@ export async function renderWithTemplater(
   }
 
   try {
-    // Read template content and do variable substitution
-    let template = await app.vault.read(templateFile);
-
-    // Replace template variables with repo data
-    template = substituteTemplateVars(template, repo);
-
-    return template;
+    // Read template content and process with built-in {{mustache}} substitution
+    const template = await app.vault.read(templateFile);
+    return substituteTemplateVars(template, repo);
   } catch (err) {
-    console.error(`Templater rendering failed for ${repo.name}:`, err);
+    console.error(`Template rendering failed for ${repo.name}:`, err);
     return null;
   }
 }
@@ -1923,11 +1976,12 @@ Expected: May fail until `main.ts` exists. Acceptable at this stage.
 
 ```bash
 git add src/templater.ts
-git commit -m "feat: add Templater integration with variable substitution
+git commit -m "feat: add built-in template engine with mustache-style substitution
 
 Support custom templates with {{repo.*}} variables and
-{{#issues}}/{{#pullRequests}} iteration blocks.
-Falls back to default renderer if Templater or template not available."
+{{#issues}}/{{#pullRequests}} iteration blocks processed by the
+plugin's own substituteTemplateVars engine. Templater presence is
+detected to surface a warning but its API is not invoked."
 ```
 
 ---
