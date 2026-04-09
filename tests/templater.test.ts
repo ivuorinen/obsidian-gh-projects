@@ -7,6 +7,8 @@ import type { Logger } from "../src/logger";
 function makeRepo(overrides: Partial<RepoData> = {}): RepoData {
 	return {
 		name: "my-project",
+		owner: "user",
+		fullName: "user/my-project",
 		description: "A cool project",
 		url: "https://github.com/user/my-project",
 		isPrivate: false,

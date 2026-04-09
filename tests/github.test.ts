@@ -8,6 +8,8 @@ import { requestUrl } from "obsidian";
 function makeRepoNode(overrides: Partial<GraphQLRepoNode> = {}): GraphQLRepoNode {
 	return {
 		name: "test-repo",
+		nameWithOwner: "user/test-repo",
+		owner: { login: "user" },
 		description: "A test repository",
 		url: "https://github.com/user/test-repo",
 		isPrivate: false,
@@ -59,6 +61,8 @@ function makeRepoNode(overrides: Partial<GraphQLRepoNode> = {}): GraphQLRepoNode
 function makeRepo(overrides: Partial<RepoData> = {}): RepoData {
 	return {
 		name: "test",
+		owner: "test-owner",
+		fullName: "test-owner/test",
 		description: null,
 		url: "",
 		isPrivate: false,
@@ -217,6 +221,8 @@ function makeGraphQLPage(repoName: string, hasNextPage: boolean, endCursor: stri
 						nodes: [
 							{
 								name: repoName,
+								nameWithOwner: `user/${repoName}`,
+								owner: { login: "user" },
 								description: null,
 								url: `https://github.com/user/${repoName}`,
 								isPrivate: false,
@@ -314,6 +320,8 @@ describe("fetchRepos", () => {
 							nodes: [
 								{
 									name: "repo-x",
+									nameWithOwner: "user/repo-x",
+									owner: { login: "user" },
 									description: null,
 									url: "https://github.com/user/repo-x",
 									isPrivate: false,

@@ -11,6 +11,8 @@ import {
 function makeValidRepoNode() {
   return {
     name: "test-repo",
+    nameWithOwner: "user/test-repo",
+    owner: { login: "user" },
     description: "A test repository",
     url: "https://github.com/user/test-repo",
     isPrivate: false,

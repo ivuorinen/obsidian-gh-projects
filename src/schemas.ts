@@ -50,6 +50,8 @@ export const graphQLPRNodeSchema = graphQLIssueNodeSchema.extend({
 
 export const graphQLRepoNodeSchema = z.object({
   name: z.string(),                                          // String!
+  nameWithOwner: z.string(),                                 // String!
+  owner: z.object({ login: z.string() }),                    // RepositoryOwner!
   description: z.string().nullable(),                        // String
   url: z.string(),                                           // URI!
   isPrivate: z.boolean(),                                    // Boolean!

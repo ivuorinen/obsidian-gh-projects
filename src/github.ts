@@ -53,6 +53,8 @@ query($username: String!, $first: Int!, $issuesFirst: Int!, $prsFirst: Int!, $af
     ) {
       nodes {
         name
+        nameWithOwner
+        owner { login }
         description
         url
         isPrivate
@@ -116,6 +118,8 @@ export function parsePRNode(node: GraphQLPRNode): PRData {
 export function parseRepoNode(node: GraphQLRepoNode): RepoData {
   return {
     name: node.name,
+    owner: node.owner.login,
+    fullName: node.nameWithOwner,
     description: node.description,
     url: node.url,
     isPrivate: node.isPrivate,

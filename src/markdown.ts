@@ -16,9 +16,13 @@ export function renderFrontmatter(repo: RepoData, coverPath: string | null): str
 	const lines: string[] = ["---"];
 
 	lines.push(`name: ${repo.name}`);
+	lines.push(`owner: ${repo.owner}`);
+	lines.push(`full_name: ${repo.fullName}`);
 	lines.push(`description: "${escapeYamlString(repo.description ?? "")}"`);
 	lines.push(`url: ${repo.url}`);
 	lines.push(`private: ${repo.isPrivate}`);
+	lines.push(`is_fork: ${repo.isFork}`);
+	lines.push(`is_archived: ${repo.isArchived}`);
 	lines.push(`language: ${repo.primaryLanguage ?? ""}`);
 
 	if (repo.languages.length > 0) {

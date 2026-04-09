@@ -57,6 +57,8 @@ function makeLogger(): Logger {
 function makeRepo(overrides: Partial<RepoData> = {}): RepoData {
 	return {
 		name: "my-repo",
+		owner: "user",
+		fullName: "user/my-repo",
 		description: null,
 		url: "https://github.com/user/my-repo",
 		isPrivate: false,

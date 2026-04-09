@@ -36,6 +36,8 @@ export const DEFAULT_SETTINGS: GHProjectsSettings = {
 
 export interface RepoData {
   name: string;
+  owner: string;
+  fullName: string;
   description: string | null;
   url: string;
   isPrivate: boolean;
