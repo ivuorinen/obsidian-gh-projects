@@ -121,6 +121,14 @@ describe("createLogger", () => {
       logger.error("no token here");
       expect(spy).toHaveBeenCalledWith("[GH Projects]", "no token here");
     });
+
+    it("passes through non-string, non-Error, non-object primitives unchanged (line 27)", () => {
+      const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const logger = createLogger(makeDeps({ getToken: () => "ghp_secret123" }));
+      // number is not string, not Error, not object — falls through to `return arg`
+      logger.error(42, true, null);
+      expect(spy).toHaveBeenCalledWith("[GH Projects]", 42, true, null);
+    });
   });
 
   describe("multiple arguments", () => {

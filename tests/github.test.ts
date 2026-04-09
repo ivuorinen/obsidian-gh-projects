@@ -372,10 +372,48 @@ describe("fetchRepos", () => {
 		expect(body.variables.affiliations).toContain("ORGANIZATION_MEMBER");
 	});
 
+	it("throws generic error on 403 without x-ratelimit-reset header (line 193-197)", async () => {
+		vi.mocked(requestUrl).mockRejectedValueOnce({
+			status: 403,
+			headers: {},
+		});
+		await expect(fetchRepos("token123", { ...DEFAULT_SETTINGS, githubUsername: "user" }))
+			.rejects.toThrow("GitHub API error (HTTP 403). Check plugin settings.");
+	});
+
+	it("throws GitHubRateLimitError with computed resetTime when no x-ratelimit-reset header in GraphQL error (line 211)", async () => {
+		vi.mocked(requestUrl).mockResolvedValueOnce({
+			json: {
+				errors: [{ message: "rate limit exceeded" }],
+				data: null,
+			},
+			headers: {}, // no x-ratelimit-reset header
+		});
+		await expect(fetchRepos("token123", { ...DEFAULT_SETTINGS, githubUsername: "user" }))
+			.rejects.toBeInstanceOf(GitHubRateLimitError);
+	});
+
 	it("wraps HTTP errors with descriptive message", async () => {
 		vi.mocked(requestUrl).mockRejectedValueOnce({ status: 500, message: "Server Error" });
 		await expect(fetchRepos("token", { ...DEFAULT_SETTINGS, githubUsername: "user" }))
 			.rejects.toThrow("GitHub API error (HTTP 500). GitHub may be experiencing issues — try again later.");
+	});
+
+	it("rethrows non-HTTP errors from requestUrl (line 202)", async () => {
+		// A non-HTTP error has no .status property
+		const networkError = new TypeError("Failed to fetch");
+		vi.mocked(requestUrl).mockRejectedValueOnce(networkError);
+		await expect(fetchRepos("token", { ...DEFAULT_SETTINGS, githubUsername: "user" }))
+			.rejects.toThrow("Failed to fetch");
+	});
+
+	it("throws when json.data is null with no errors (empty response)", async () => {
+		vi.mocked(requestUrl).mockResolvedValueOnce({
+			json: { data: null },
+			headers: {},
+		});
+		await expect(fetchRepos("token", { ...DEFAULT_SETTINGS, githubUsername: "user" }))
+			.rejects.toThrow("GitHub API returned empty response");
 	});
 
 	it("clears pullRequests when prsLimit is 0", async () => {

@@ -14,65 +14,86 @@ export const repositoryAffiliationSchema = z.enum([
   "COLLABORATOR",
 ]);
 
+// --- Helpers ---
+
+/**
+ * GitHub GraphQL connection `nodes` fields are typed as `[[Type]]`,
+ * meaning both the array itself and individual items can be null.
+ * This helper accepts null arrays (→ []) and filters out null items.
+ */
+function connectionNodes<T extends z.ZodType>(schema: T) {
+  return z
+    .array(schema.nullable())
+    .nullable()
+    .transform((v) =>
+      (v ?? []).filter((item): item is z.infer<T> => item !== null)
+    );
+}
+
 // --- GraphQL node schemas ---
 
 export const graphQLIssueNodeSchema = z.object({
-  title: z.string(),
-  number: z.number().int(),
-  url: z.string(),
-  author: z.object({ login: z.string() }).nullable(),
-  labels: z.object({
-    nodes: z.array(z.object({ name: z.string() })),
-  }),
-  createdAt: z.string(),
-  updatedAt: z.string(),
+  title: z.string(),                                        // String!
+  number: z.number().int(),                                 // Int!
+  url: z.string(),                                          // URI!
+  author: z.object({ login: z.string() }).nullable(),       // Actor (nullable)
+  labels: z.object({                                        // LabelConnection (nullable)
+    nodes: connectionNodes(z.object({ name: z.string() })),
+  }).nullable().transform((v) => v ?? { nodes: [] }),
+  createdAt: z.string(),                                    // DateTime!
+  updatedAt: z.string(),                                    // DateTime!
 });
 
 export const graphQLPRNodeSchema = graphQLIssueNodeSchema.extend({
-  reviewDecision: pullRequestReviewDecisionSchema.nullable(),
+  reviewDecision: pullRequestReviewDecisionSchema.nullable(), // PullRequestReviewDecision
 });
 
 export const graphQLRepoNodeSchema = z.object({
-  name: z.string(),
-  description: z.string().nullable(),
-  url: z.string(),
-  isPrivate: z.boolean(),
-  isFork: z.boolean(),
-  isArchived: z.boolean(),
-  primaryLanguage: z.object({ name: z.string() }).nullable(),
-  languages: z.object({
-    nodes: z.array(z.object({ name: z.string() })),
+  name: z.string(),                                          // String!
+  description: z.string().nullable(),                        // String
+  url: z.string(),                                           // URI!
+  isPrivate: z.boolean(),                                    // Boolean!
+  isFork: z.boolean(),                                       // Boolean!
+  isArchived: z.boolean(),                                   // Boolean!
+  primaryLanguage: z.object({ name: z.string() }).nullable(), // Language
+  languages: z.object({                                      // LanguageConnection!
+    nodes: connectionNodes(z.object({ name: z.string() })),
   }),
-  repositoryTopics: z.object({
-    nodes: z.array(z.object({ topic: z.object({ name: z.string() }) })),
+  repositoryTopics: z.object({                               // RepositoryTopicConnection!
+    nodes: connectionNodes(
+      z.object({ topic: z.object({ name: z.string() }) })
+    ),
   }),
-  licenseInfo: z.object({ spdxId: z.string(), name: z.string() }).nullable(),
-  stargazerCount: z.number().int(),
-  forkCount: z.number().int(),
-  watchers: z.object({ totalCount: z.number().int() }),
-  openGraphImageUrl: z.string(),
-  pushedAt: z.string().nullable(),
-  updatedAt: z.string(),
-  issues: z.object({
+  licenseInfo: z.object({                                    // License
+    spdxId: z.string().nullable(),                           // String (nullable)
+    name: z.string(),                                        // String!
+  }).nullable(),
+  stargazerCount: z.number().int(),                          // Int!
+  forkCount: z.number().int(),                               // Int!
+  watchers: z.object({ totalCount: z.number().int() }),      // UserConnection!
+  openGraphImageUrl: z.string(),                             // URI!
+  pushedAt: z.string().nullable(),                           // DateTime
+  updatedAt: z.string(),                                     // DateTime!
+  issues: z.object({                                         // IssueConnection!
     totalCount: z.number().int(),
-    nodes: z.array(graphQLIssueNodeSchema),
+    nodes: connectionNodes(graphQLIssueNodeSchema),
   }),
-  pullRequests: z.object({
+  pullRequests: z.object({                                   // PullRequestConnection!
     totalCount: z.number().int(),
-    nodes: z.array(graphQLPRNodeSchema),
+    nodes: connectionNodes(graphQLPRNodeSchema),
   }),
 });
 
 const pageInfoSchema = z.object({
-  hasNextPage: z.boolean(),
-  endCursor: z.string().nullable(),
+  hasNextPage: z.boolean(),                                  // Boolean!
+  endCursor: z.string().nullable(),                          // String
 });
 
 export const graphQLResponseSchema = z.object({
   data: z.object({
     user: z.object({
       repositories: z.object({
-        nodes: z.array(graphQLRepoNodeSchema),
+        nodes: connectionNodes(graphQLRepoNodeSchema),       // [[Repository]]
         pageInfo: pageInfoSchema,
       }),
     }),

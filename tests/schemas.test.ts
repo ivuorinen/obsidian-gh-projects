@@ -206,6 +206,61 @@ describe("settingsSchema", () => {
   });
 });
 
+describe("connectionNodes (via graphQLIssueNodeSchema.labels)", () => {
+  it("filters out null items in a non-null array", () => {
+    // labels.nodes array contains a null item — connectionNodes should strip it
+    const node = {
+      title: "Bug",
+      number: 1,
+      url: "https://github.com/user/repo/issues/1",
+      author: { login: "alice" },
+      labels: { nodes: [{ name: "bug" }, null] },
+      createdAt: "2026-04-01T00:00:00Z",
+      updatedAt: "2026-04-02T00:00:00Z",
+    };
+    const parsed = graphQLIssueNodeSchema.parse(node);
+    expect(parsed.labels.nodes).toEqual([{ name: "bug" }]);
+  });
+
+  it("returns empty array when the whole nodes array is null", () => {
+    const node = {
+      title: "Bug",
+      number: 1,
+      url: "https://github.com/user/repo/issues/1",
+      author: { login: "alice" },
+      labels: { nodes: null },
+      createdAt: "2026-04-01T00:00:00Z",
+      updatedAt: "2026-04-02T00:00:00Z",
+    };
+    const parsed = graphQLIssueNodeSchema.parse(node);
+    expect(parsed.labels.nodes).toEqual([]);
+  });
+
+  it("returns default {nodes:[]} when labels is null (line 42 transform)", () => {
+    // labels is nullable and transforms null → { nodes: [] }
+    const node = {
+      title: "Bug",
+      number: 1,
+      url: "https://github.com/user/repo/issues/1",
+      author: { login: "alice" },
+      labels: null,
+      createdAt: "2026-04-01T00:00:00Z",
+      updatedAt: "2026-04-02T00:00:00Z",
+    };
+    const parsed = graphQLIssueNodeSchema.parse(node);
+    expect(parsed.labels).toEqual({ nodes: [] });
+  });
+
+  it("filters null items from repo languages.nodes", () => {
+    const node = {
+      ...makeValidRepoNode(),
+      languages: { nodes: [{ name: "TypeScript" }, null] },
+    };
+    const parsed = graphQLRepoNodeSchema.parse(node);
+    expect(parsed.languages.nodes).toEqual([{ name: "TypeScript" }]);
+  });
+});
+
 describe("graphQLVariablesSchema", () => {
   it("accepts valid variables", () => {
     const vars = {

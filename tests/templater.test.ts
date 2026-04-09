@@ -196,17 +196,30 @@ describe("renderWithTemplater", () => {
 		vi.clearAllMocks();
 	});
 
-	it("returns null when Templater plugin is not found", async () => {
-		const app = makeApp(null);
-		const result = await renderWithTemplater(app, "templates/repo.md", makeRepo(), makeLogger());
-		expect(result).toBeNull();
-	});
+	// NOTE: test order matters here — templateWarningShown is a module-level singleton.
+	// The "template file not found" test must run BEFORE "no plugin" so that
+	// lines 40-41 (the Notice + flag set) are exercised while the flag is still false.
 
-	it("returns null when template file is not found", async () => {
+	it("returns null when template file is not found (lines 40-41: Notice + flag, first call)", async () => {
 		const fakePlugin = { id: "templater-obsidian" };
 		const app = makeApp(fakePlugin);
 		(app.vault.getFileByPath as ReturnType<typeof vi.fn>).mockReturnValue(null);
 		const result = await renderWithTemplater(app, "templates/missing.md", makeRepo(), makeLogger());
+		expect(result).toBeNull();
+	});
+
+	it("returns null when template file is not found on subsequent call (templateWarningShown guard skips Notice)", async () => {
+		// templateWarningShown is now true from the previous test — Notice is skipped
+		const fakePlugin = { id: "templater-obsidian" };
+		const app = makeApp(fakePlugin);
+		(app.vault.getFileByPath as ReturnType<typeof vi.fn>).mockReturnValue(null);
+		const result = await renderWithTemplater(app, "templates/missing.md", makeRepo(), makeLogger());
+		expect(result).toBeNull();
+	});
+
+	it("returns null when Templater plugin is not found", async () => {
+		const app = makeApp(null);
+		const result = await renderWithTemplater(app, "templates/repo.md", makeRepo(), makeLogger());
 		expect(result).toBeNull();
 	});
 

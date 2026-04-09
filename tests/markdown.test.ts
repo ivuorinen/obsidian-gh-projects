@@ -87,6 +87,15 @@ describe("renderFrontmatter", () => {
 	});
 });
 
+describe("renderFrontmatter null pushedAt (line 45)", () => {
+	it("renders empty string for pushed_at when pushedAt is null", () => {
+		const result = renderFrontmatter(makeRepo({ pushedAt: null }), null);
+		expect(result).toContain("pushed_at: ");
+		// Should not contain a date value
+		expect(result).toMatch(/pushed_at: \n/);
+	});
+});
+
 describe("renderBody", () => {
 	it("renders heading and description", () => {
 		const result = renderBody(makeRepo());
@@ -119,6 +128,72 @@ describe("renderBody", () => {
 	it("omits PRs section when count is 0", () => {
 		const result = renderBody(makeRepo({ pullRequests: [], pullRequestsCount: 0 }));
 		expect(result).not.toContain("## Open Pull Requests");
+	});
+});
+
+describe("renderBody table branch coverage (lines 53-68)", () => {
+	it("renders '—' in issues table when issue has no labels", () => {
+		const repo = makeRepo({
+			issues: [{
+				title: "No-label issue",
+				number: 5,
+				url: "https://github.com/user/my-project/issues/5",
+				author: "dave",
+				labels: [],
+				createdAt: "2026-04-01T00:00:00Z",
+				updatedAt: "2026-04-01T00:00:00Z",
+			}],
+			issuesCount: 1,
+		});
+		const result = renderBody(repo);
+		expect(result).toContain("| 5 |");
+		expect(result).toContain("—");
+	});
+
+	it("renders PENDING in PRs table when reviewDecision is null", () => {
+		const repo = makeRepo({
+			pullRequests: [{
+				title: "Draft PR",
+				number: 10,
+				url: "https://github.com/user/my-project/pulls/10",
+				author: "eve",
+				labels: [],
+				createdAt: "2026-04-05T00:00:00Z",
+				updatedAt: "2026-04-05T00:00:00Z",
+				reviewDecision: null,
+			}],
+			pullRequestsCount: 1,
+		});
+		const result = renderBody(repo);
+		expect(result).toContain("PENDING");
+		expect(result).toContain("—");
+	});
+
+	it("renderBody with no description omits description section", () => {
+		const result = renderBody(makeRepo({ description: null }));
+		expect(result).not.toContain("undefined");
+		expect(result).toContain("# my-project");
+	});
+});
+
+describe("formatDate fallback branch (line 8)", () => {
+	it("formatDate returns date portion of ISO string", () => {
+		// Exercised via renderIssuesTable — createdAt "2026-04-01T00:00:00Z" → "2026-04-01"
+		const repo = makeRepo({
+			issues: [{
+				title: "Test",
+				number: 1,
+				url: "https://github.com/user/my-project/issues/1",
+				author: "alice",
+				labels: ["bug"],
+				createdAt: "2026-04-01T00:00:00Z",
+				updatedAt: "2026-04-01T00:00:00Z",
+			}],
+			issuesCount: 1,
+		});
+		const result = renderBody(repo);
+		expect(result).toContain("2026-04-01");
+		expect(result).not.toContain("T00:00:00Z");
 	});
 });
 
