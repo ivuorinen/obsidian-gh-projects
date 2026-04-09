@@ -229,5 +229,19 @@ export class GHProjectsSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					})
 			);
+
+		new Setting(containerEl).setName("Advanced").setHeading();
+
+		new Setting(containerEl)
+			.setName("Debug mode")
+			.setDesc("Log verbose sync details to the developer console.")
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.debugMode)
+					.onChange(async (value) => {
+						this.plugin.settings.debugMode = value;
+						await this.plugin.saveSettings();
+					})
+			);
 	}
 }

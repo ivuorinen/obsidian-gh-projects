@@ -14,6 +14,7 @@ export interface GHProjectsSettings {
   includeForks: boolean;
   includeArchived: boolean;
   includeOrgRepos: boolean;
+  debugMode: boolean;
 }
 
 export const DEFAULT_SETTINGS: GHProjectsSettings = {
@@ -28,6 +29,7 @@ export const DEFAULT_SETTINGS: GHProjectsSettings = {
   includeForks: false,
   includeArchived: false,
   includeOrgRepos: false,
+  debugMode: false,
 };
 
 // --- GitHub Data (app-level, constructed by parser functions) ---

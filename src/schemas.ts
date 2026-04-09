@@ -94,6 +94,7 @@ export const settingsSchema = z.object({
   includeForks: z.boolean(),
   includeArchived: z.boolean(),
   includeOrgRepos: z.boolean(),
+  debugMode: z.boolean(),
 }).partial();
 
 // --- GraphQL variables ---
