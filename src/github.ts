@@ -165,7 +165,7 @@ export async function fetchRepos(
   while (hasNextPage) {
     const variables: GraphQLVariables = {
       username: settings.githubUsername,
-      first: 100,
+      first: 25,
       issuesFirst,
       prsFirst,
       after,
