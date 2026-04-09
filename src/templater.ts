@@ -2,13 +2,17 @@ import { App, Notice } from "obsidian";
 import type { RepoData } from "./types";
 import { renderBody } from "./markdown";
 
+interface ObsidianAppWithPlugins extends App {
+  plugins?: {
+    getPlugin?(id: string): unknown;
+  };
+}
+
 let templateWarningShown = false;
 
-export function getTemplaterPlugin(app: App): unknown | null {
-	const appAny = app as unknown as Record<string, unknown>;
-	const plugins = appAny.plugins as Record<string, unknown> | undefined;
-	const getPlugin = plugins?.getPlugin as ((id: string) => unknown) | undefined;
-	return getPlugin?.("templater-obsidian") ?? null;
+export function getTemplaterPlugin(app: App): unknown {
+  const appWithPlugins = app as ObsidianAppWithPlugins;
+  return appWithPlugins.plugins?.getPlugin?.("templater-obsidian") ?? null;
 }
 
 export async function renderWithTemplater(
@@ -20,6 +24,7 @@ export async function renderWithTemplater(
 	if (!templater) {
 		if (!templateWarningShown) {
 			new Notice(
+				// eslint-disable-next-line obsidianmd/ui/sentence-case -- "Templater" is a plugin name
 				"Templater plugin not found. Using default renderer. Install Templater for custom templates."
 			);
 			templateWarningShown = true;
@@ -40,7 +45,7 @@ export async function renderWithTemplater(
 		let template = await app.vault.read(templateFile);
 		template = substituteTemplateVars(template, repo);
 		return template;
-	} catch (err) {
+	} catch (err: unknown) {
 		console.error(`Templater rendering failed for ${repo.name}:`, err);
 		return null;
 	}
@@ -58,7 +63,7 @@ export function substituteTemplateVars(template: string, repo: RepoData): string
 		"{{repo.openIssues}}": String(repo.issuesCount),
 		"{{repo.openPRs}}": String(repo.pullRequestsCount),
 		"{{repo.license}}": repo.license ?? "",
-		"{{repo.pushedAt}}": repo.pushedAt,
+		"{{repo.pushedAt}}": repo.pushedAt ?? "",
 		"{{repo.updatedAt}}": repo.updatedAt,
 		"{{repo.private}}": String(repo.isPrivate),
 	};
