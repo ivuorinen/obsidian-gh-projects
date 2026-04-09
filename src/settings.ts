@@ -88,7 +88,7 @@ export class GHProjectsSettingTab extends PluginSettingTab {
 			.setDesc("Your GitHub username to fetch repositories for.")
 			.addText((text) =>
 				text
-					.setPlaceholder("octocat")
+					.setPlaceholder("Octocat")
 					.setValue(this.plugin.settings.githubUsername)
 					.onChange(async (value) => {
 						this.plugin.settings.githubUsername = value;
@@ -100,7 +100,7 @@ export class GHProjectsSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Output folder")
-			.setDesc("Folder where repository markdown files are saved.")
+			.setDesc("Folder where repository Markdown files are saved.")
 			.addSearch((search) => {
 				search
 					.setPlaceholder("GitHub")
@@ -128,7 +128,8 @@ export class GHProjectsSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Template file")
-			.setDesc("Optional Templater template for customizing the markdown body. Leave empty for default.")
+			// eslint-disable-next-line obsidianmd/ui/sentence-case -- "Templater" is a plugin name
+			.setDesc("Optional Templater template for customizing the Markdown body. Leave empty for default.")
 			.addSearch((search) => {
 				search
 					.setPlaceholder("Templates/github-repo.md")
