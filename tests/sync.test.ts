@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { shouldUpdateRepo, buildCoverPath, SyncManager } from "../src/sync";
+import { shouldUpdateRepo, buildCoverPath, SyncManager, slugifyRepoName } from "../src/sync";
 import type { App } from "obsidian";
 import { requestUrl } from "obsidian";
 import { DEFAULT_SETTINGS } from "../src/types";
@@ -117,6 +117,48 @@ describe("buildCoverPath", () => {
 		expect(buildCoverPath("GitHub/assets/", "my-project")).toBe(
 			"GitHub/assets/my-project.png"
 		);
+	});
+});
+
+describe("slugifyRepoName", () => {
+	it("passes through normal repo names", () => {
+		expect(slugifyRepoName("obsidian-gh-projects", "user", "user", false)).toBe("obsidian-gh-projects");
+	});
+
+	it("strips leading dots", () => {
+		expect(slugifyRepoName(".github", "user", "user", false)).toBe("github");
+	});
+
+	it("replaces dots with dashes", () => {
+		expect(slugifyRepoName("my.cool.project", "user", "user", false)).toBe("my-cool-project");
+	});
+
+	it("lowercases the name", () => {
+		expect(slugifyRepoName("MyProject", "user", "user", false)).toBe("myproject");
+	});
+
+	it("replaces special characters with dashes", () => {
+		expect(slugifyRepoName("hello@world!", "user", "user", false)).toBe("hello-world");
+	});
+
+	it("collapses consecutive dashes", () => {
+		expect(slugifyRepoName("a--b---c", "user", "user", false)).toBe("a-b-c");
+	});
+
+	it("trims leading and trailing dashes", () => {
+		expect(slugifyRepoName("-repo-", "user", "user", false)).toBe("repo");
+	});
+
+	it("prefixes org repos with owner when includeOrgRepos is true and owner differs", () => {
+		expect(slugifyRepoName("utils", "other-org", "user", true)).toBe("other-org--utils");
+	});
+
+	it("does not prefix when owner matches username", () => {
+		expect(slugifyRepoName("utils", "user", "user", true)).toBe("utils");
+	});
+
+	it("does not prefix when includeOrgRepos is false", () => {
+		expect(slugifyRepoName("utils", "other-org", "user", false)).toBe("utils");
 	});
 });
 

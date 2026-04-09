@@ -19,6 +19,26 @@ export function buildCoverPath(assetsFolder: string, repoName: string): string {
 	return `${folder}/${repoName}.png`;
 }
 
+export function slugifyRepoName(
+	name: string,
+	owner: string,
+	username: string,
+	includeOrgRepos: boolean
+): string {
+	let slug = name
+		.toLowerCase()
+		.replace(/^\.+/, "")
+		.replace(/[^a-z0-9-]/g, "-")
+		.replace(/-{2,}/g, "-")
+		.replace(/^-|-$/g, "");
+
+	if (includeOrgRepos && owner.toLowerCase() !== username.toLowerCase()) {
+		slug = `${owner.toLowerCase()}--${slug}`;
+	}
+
+	return slug;
+}
+
 function extractSyncedAt(content: string): string | null {
 	const match = content.match(/^synced_at:\s*(.+)$/m);
 	if (!match) return null;
@@ -109,7 +129,8 @@ export class SyncManager {
 	}
 
 	private async syncRepo(repo: RepoData, settings: GHProjectsSettings): Promise<boolean> {
-		const filePath = normalizePath(`${settings.outputFolder}/${repo.name}.md`);
+		const slug = slugifyRepoName(repo.name, repo.owner, settings.githubUsername, settings.includeOrgRepos);
+		const filePath = normalizePath(`${settings.outputFolder}/${slug}.md`);
 		const existingFile = this.app.vault.getFileByPath(filePath);
 
 		if (existingFile) {
@@ -122,7 +143,7 @@ export class SyncManager {
 
 		let coverPath: string | null = null;
 		if (repo.openGraphImageUrl) {
-			coverPath = buildCoverPath(settings.assetsFolder, repo.name);
+			coverPath = buildCoverPath(settings.assetsFolder, slug);
 			await this.downloadCoverImage(repo.openGraphImageUrl, coverPath, repo.updatedAt);
 		}
 
